@@ -152,6 +152,12 @@ services:
       # placeholder in the command. A fake-looking version is safer
       # than a plausible wrong one that fails only at pull time.
       - SPARTA_VERSION=${SPARTA_VERSION:-}
+      # Contact address shown on the licence page and in the expired-
+      # licence API error. Ships EMPTY: unset means the console shows
+      # no address rather than a wrong one. Set it here and restart
+      # the console -- it is deliberately not compiled in, so changing
+      # it never needs a rebuild.
+      - SPARTA_SUPPORT_EMAIL=${SPARTA_SUPPORT_EMAIL:-}
     networks:
       - sparta-net
     logging:
