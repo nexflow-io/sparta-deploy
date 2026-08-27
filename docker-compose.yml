@@ -141,6 +141,17 @@ services:
       - ENV_FILE_PATH=/var/sparta/env/.env
       - CONSOLE_SECRET_KEY=${CONSOLE_SECRET_KEY:-}
       - DB_ENCRYPTION_KEY=${DB_ENCRYPTION_KEY:-}
+      # The console generates the agent deploy commands shown on the
+      # Tunnels page, and those name an image tag. It has no version
+      # of its own, so the release version is passed in from the same
+      # .env line compose already reads for every image tag above --
+      # one source of truth rather than two that can disagree.
+      #
+      # No :-REPLACE_ME fallback here, deliberately. Unset resolves to
+      # empty, the API returns null, and the console renders a visible
+      # placeholder in the command. A fake-looking version is safer
+      # than a plausible wrong one that fails only at pull time.
+      - SPARTA_VERSION=${SPARTA_VERSION:-}
     networks:
       - sparta-net
     logging:
