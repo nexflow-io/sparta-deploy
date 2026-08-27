@@ -1,0 +1,28 @@
+# ── Never commit this ────────────────────────────────────────
+# This repo is PUBLIC. .env holds DB_ENCRYPTION_KEY, the only thing
+# that can decrypt the credentials Sparta issues to agents. It is
+# generated on the customer's own host by setup.sh and must never
+# exist here in any form.
+.env
+.env.*
+*.env
+
+# Release archives are built by CI and attached to a GitHub Release.
+# They are never committed -- a committed tarball is a second copy of
+# the release that can silently drift from the tagged one.
+*.tar.gz
+*.tgz
+*.zip
+
+# Certificates and keys. Nothing in this repo should ever hold one,
+# so these entries exist to make an accident inert rather than to
+# cover an expected case.
+*.pem
+*.key
+*.crt
+*.p12
+
+# Local artifacts
+.DS_Store
+*.swp
+*~

@@ -1,0 +1,170 @@
+# Sparta — Docker Compose
+#
+# Port architecture:
+#   443  → nginx (public) — agents only
+#            /ws  → relay:8443 (WebSocket)
+#            /    → 404 (console is NOT served here)
+#   8443 → nginx → console:8081 (UI + API) — admin access
+#            Restrict to your IP in your firewall / security group.
+#
+#   The console has no published port of its own; it is only
+#   reachable through nginx on 8443.
+#
+# Quick start:
+#   1. ./setup.sh   (writes .env incl. DB_ENCRYPTION_KEY, pulls
+#                    images, brings up console + nginx)
+#   2. Open https://your-server:8443 — the setup wizard. nginx serves
+#      a temporary self-signed cert until the wizard installs the real
+#      one, so expect a browser warning on this first visit.
+#   3. Complete the wizard.
+#   4. docker compose --profile relay up -d
+#   5. Console stays at https://your-server:8443
+#
+# ── Version pinning ──────────────────────────────────────────
+# All four images are pinned to ONE date tag via SPARTA_VERSION.
+# They are built, tested and released as a set, and there is no
+# protocol version negotiation between console, relay and agent —
+# so a mismatched set fails as a connection problem with no
+# indication that versions are the cause. Change the tag in ONE
+# place, or not at all.
+#
+# To upgrade: set SPARTA_VERSION in .env, then
+#   docker compose pull && docker compose up -d
+#   docker compose --profile relay up -d
+
+name: sparta
+
+services:
+
+  # ── Nginx ────────────────────────────────────────────────
+  # TLS termination + routing. Started by setup.sh.
+  nginx:
+    image: spartahq/sparta:nginx-${SPARTA_VERSION:-REPLACE_ME}
+    container_name: sparta-nginx
+    restart: unless-stopped
+    # nginx.conf sets worker_connections 4096, but the default
+    # container nofile limit is 1024 — which silently capped the real
+    # ceiling at roughly a quarter of the configured one. A proxied
+    # connection costs about two descriptors (client + upstream), so
+    # 4096 connections needs ~8192 plus overhead. Do not lower this:
+    # the failure mode is accept-time errors under concurrency with
+    # nothing pointing at descriptors as the cause.
+    ulimits:
+      nofile:
+        soft: 10240
+        hard: 10240
+    ports:
+      - "443:443"
+      - "8443:8443"
+    volumes:
+      - sparta_nginx:/etc/sparta/nginx   # generated site config
+      - sparta_certs:/etc/sparta/certs   # TLS certificates
+      - /etc/letsencrypt:/etc/letsencrypt:ro
+    networks:
+      - sparta-net
+    depends_on:
+      - console
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "20m"
+        max-file: "3"
+
+  # ── Relay ─────────────────────────────────────────────────
+  # WebSocket server — plain WS on internal port 8443.
+  # TLS is handled by nginx on 443; the relay never terminates TLS.
+  relay:
+    image: spartahq/sparta:relay-${SPARTA_VERSION:-REPLACE_ME}
+    container_name: sparta-relay
+    restart: unless-stopped
+    # Deliberately profiled, so setup.sh's `up -d console nginx` does
+    # not start it. The relay must not start until the setup wizard has
+    # run: the ports line below interpolates PORT_RANGE_START/END from
+    # .env at *container creation*, and you choose that range in the
+    # wizard's Ports step. Starting the relay first publishes the
+    # default range, and a published range cannot be changed on a
+    # running container — it needs a recreate.
+    #
+    # So `docker compose --profile relay up -d` AFTER the wizard is the
+    # only point at which the correct range is known. This is by
+    # design; the console deliberately does not start the relay itself.
+    profiles: ["relay"]
+    ports:
+      # TCP tunnel ports — exposed directly (clients connect here)
+      - "${PORT_RANGE_START:-15000}-${PORT_RANGE_END:-15200}:${PORT_RANGE_START:-15000}-${PORT_RANGE_END:-15200}"
+    expose:
+      - "8443"   # internal only — nginx proxies to this
+    volumes:
+      - sparta_config:/etc/sparta
+      - sparta_certs:/etc/sparta/certs:ro
+      - /etc/letsencrypt:/etc/letsencrypt:ro
+    environment:
+      - LOG_LEVEL=${LOG_LEVEL:-INFO}
+      - CONSOLE_URL=http://sparta-console:8081
+      - INTERNAL_TOKEN=${INTERNAL_TOKEN:-}
+    env_file:
+      - path: .env
+        required: false
+    networks:
+      - sparta-net
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "50m"
+        max-file: "5"
+
+  # ── Console ───────────────────────────────────────────────
+  # Configuration UI (wizard, admin UI, API).
+  # No published port of its own — reachable ONLY through nginx on
+  # 8443. Port 8081 is the container-internal listener and must not
+  # be published: doing so bypasses TLS termination entirely.
+  console:
+    image: spartahq/sparta:console-${SPARTA_VERSION:-REPLACE_ME}
+    container_name: sparta-console
+    restart: unless-stopped
+    volumes:
+      - sparta_config:/etc/sparta
+      - sparta_certs:/etc/sparta/certs
+      - sparta_data:/var/sparta/data
+      - sparta_env:/var/sparta/env
+      - sparta_nginx:/etc/sparta/nginx
+      - /etc/letsencrypt:/etc/letsencrypt:ro
+      # The wizard writes your host .env. Single-file mount by design —
+      # the console never gets a directory it could write beyond this.
+      - ./.env:/app/host/.env:rw
+    environment:
+      - LOG_LEVEL=${LOG_LEVEL:-INFO}
+      - CONSOLE_DB_PATH=/var/sparta/data/console.db
+      - RELAY_CONFIG_PATH=/etc/sparta/relay_config.yaml
+      - NGINX_CONF_PATH=/etc/sparta/nginx/sparta.conf
+      - CERTS_PATH=/etc/sparta/certs
+      - ENV_FILE_PATH=/var/sparta/env/.env
+      - CONSOLE_SECRET_KEY=${CONSOLE_SECRET_KEY:-}
+      - DB_ENCRYPTION_KEY=${DB_ENCRYPTION_KEY:-}
+    networks:
+      - sparta-net
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "20m"
+        max-file: "3"
+
+# ── container_name is load-bearing ───────────────────────────
+# Five components resolve `sparta-console` and `sparta-relay` as DNS
+# hostnames. Compose's own alias is the SERVICE key (console, relay,
+# nginx), so removing container_name leaves the stack building clean
+# and silently unable to talk to itself — a healthy relay reports as
+# offline and every tunnel badge reads "relay offline". Membership of
+# sparta-net is required alongside it: on the default bridge,
+# container names do not resolve at all.
+
+volumes:
+  sparta_data:    # database + persistent data
+  sparta_config:  # relay_config.yaml (shared relay + console)
+  sparta_env:     # .env file storage
+  sparta_nginx:   # generated nginx site config (shared nginx + console)
+  sparta_certs:   # TLS certificates (shared all services)
+
+networks:
+  sparta-net:
+    driver: bridge
