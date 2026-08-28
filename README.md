@@ -44,9 +44,11 @@ Choose a permanent location. **This directory is your install root, not
 a temporary download** — see *Back up your .env* below.
 
 ```bash
-sudo mkdir -p /opt/sparta && cd /opt/sparta
 curl -fsSLO https://<download-url>/sparta-<version>.tar.gz
-tar xzf sparta-<version>.tar.gz --strip-components=1
+sudo mkdir -p /opt/sparta
+sudo tar xzf sparta-<version>.tar.gz -C /opt/sparta
+sudo chown -R "$(id -un):$(id -gn)" /opt/sparta
+cd /opt/sparta
 
 docker login          # use the credentials from your registration email
 
@@ -213,7 +215,7 @@ reach that file first:
 
 1. Click **Apply Config** on the Tunnels page
 2. Re-download that tunnel's **Data Agent** config
-3. Save it over the file the container already mounts
+3. Overwrite the file the container already mounts — **in place**
 4. Reload the agent:
 
 ```bash
@@ -224,6 +226,13 @@ docker kill -s HUP sparta-data-agent
 file has not changed, the agent reports a successful reload with no
 changes and carries on using the old address — and nothing, anywhere,
 reports an error.
+
+**Overwrite in place — do not replace the file.** The container mounts
+that single file by inode. `mv` swaps in a different file and the agent
+keeps reading the old one; `sed -i` and most editors do the same, since
+they write a temporary file and rename it. Use `cp`, `cat >`, or `scp`
+straight over the existing path. If the file has already been replaced,
+no reload can ever pick it up — recreate the container instead.
 
 After you click Apply Config the console names the tunnels that need
 this.
@@ -286,7 +295,7 @@ re-run the installer:
 ```bash
 cd /opt/sparta
 curl -fsSLO https://<download-url>/sparta-<new-version>.tar.gz
-tar xzf sparta-<new-version>.tar.gz --strip-components=1
+tar xzf sparta-<new-version>.tar.gz
 ./setup.sh
 docker compose --profile relay up -d relay
 ```
