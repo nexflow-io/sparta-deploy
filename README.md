@@ -322,6 +322,29 @@ version and re-run `./setup.sh`.
 
 ## Troubleshooting
 
+**First: what is the relay actually serving?**
+
+Most confusing symptoms come down to a gap between what the console
+shows and what the relay has loaded. The console holds the tunnels you
+created; the relay serves only what is in its own config file. Those can
+differ — after a licence limit is exceeded, after a tunnel is
+deactivated, or when a change was never applied.
+
+```bash
+docker exec sparta-relay sh -c \
+  "sed -n '/^tunnels:/,/^relay:/p' /etc/sparta/relay_config.yaml \
+   | sed 's/secret: .*/secret: <redacted>/'"
+```
+
+That prints every tunnel the relay is serving and the data source
+address it holds for each. **A tunnel missing from that output is not
+being served, whatever the console shows.**
+
+> Run it exactly as written. The file holds live tunnel secrets in plain
+> text, and the command redacts them *inside* the container so they
+> never reach your shell history. Do not `cat` the file, and never send
+> its raw contents to anyone.
+
 **The console will not start.**
 ```bash
 docker compose logs console
@@ -347,6 +370,20 @@ permanent, not a network issue … Retrying in 300s`. Run
 `docker restart <container>` to force the attempt immediately rather
 than waiting it out.
 
+**A tunnel looks normal in the console, but its agent is rejected with
+`Unknown tunnel_id`.**
+
+The tunnel exceeded your licence limit and was removed from the relay's
+config. The tunnel still exists and its secret is still valid — the
+agent's message is misleading in this one case, because from the relay's
+side the tunnel is simply not there. Look for an amber *Tunnel
+deactivated* line in the console's activity log.
+
+To restore it: upload a valid licence key, then **click Apply Config**.
+Nothing restores a tunnel on its own — enforcement only ever removes.
+The agent reconnects within five minutes, or immediately if you run
+`docker restart <container>`.
+
 **An agent starts and immediately exits.**
 Check its logs for a permissions error reading the config. A mode 600
 config needs `--user $(id -u):$(id -g)` on the `docker run` command.
@@ -356,6 +393,11 @@ The agent was reloaded without a fresh config file. Follow all four
 steps in *Changing a data source address* above — a reload alone
 re-reads the file the agent already has.
 
+To confirm that is what happened, compare the address in the relay
+config (the command at the top of this section) against the address your
+agent's logs say it is dialling. If they differ, the agent is holding a
+stale file.
+
 **Every tunnel reads "relay offline" but the relay looks healthy.**
 The services find each other by container name. Do not change
 `container_name` in `docker-compose.yml`.
@@ -364,6 +406,21 @@ The services find each other by container name. Do not change
 Confirm `docker login` succeeded with the credentials from your
 registration email, and that `SPARTA_VERSION` in `.env` names a real
 release.
+
+**What to send when you contact support.**
+
+Sparta is self-hosted, so we cannot look at your install. A first
+message containing these four things usually replaces a day of
+back-and-forth:
+
+1. the redacted relay config, from the command at the top of this
+   section
+2. `docker logs --tail 200 <your agent container>`
+3. `curl -sk https://localhost:8443/api/meta`, run on the Sparta host
+4. `docker ps --format 'table {{.Names}}\t{{.Image}}\t{{.Status}}'`
+
+**Never send `.env`, an unredacted `relay_config.yaml`, or any
+`agent_config.yaml`.** Each carries live secrets.
 
 ---
 
