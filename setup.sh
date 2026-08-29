@@ -202,8 +202,16 @@ fi
 # is fatal, not cosmetic. It previously ran as
 # `pull --quiet 2>/dev/null || true`, which hid the error, the exit
 # code and the output all three.
+#
+# --profile relay is REQUIRED and its absence was a SECOND, separate
+# hole in the same line. The relay carries profiles: ["relay"] in
+# docker-compose.yml, so a bare `pull` silently skips it: this script
+# validated two of the three images and printed complete success, and
+# a missing relay-<version> tag surfaced later, by hand, as agents
+# that could not connect. Verified 2026-08-28: with the flag, compose
+# pulls 3/3.
 echo "Pulling Sparta images..."
-if ! docker compose pull; then
+if ! docker compose --profile relay pull; then
     echo ""
     echo "ERROR: could not pull the Sparta images."
     echo ""
