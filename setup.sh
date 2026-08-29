@@ -11,6 +11,14 @@ cd "$(dirname "$0")"
 # the cause. Change this in one place, or not at all.
 SPARTA_VERSION_DEFAULT="REPLACE_ME"
 
+# Set below when .env already exists, i.e. this run is an UPGRADE rather
+# than a first install. The closing banner branches on it. Telling an
+# upgrading customer to "complete the setup wizard" sends them looking
+# for a wizard they finished long ago, and reads as though the upgrade
+# discarded their install -- alarming in exactly the wrong way, at the
+# one moment they are most worried about their encryption key.
+IS_UPGRADE=0
+
 echo ""
 echo "╔════════════════════════════════════════════════════╗"
 echo "║           Sparta — Self-Hosted Relay               ║"
@@ -92,6 +100,7 @@ if [ -f .env ]; then
     # sed exits 0 whether or not it matched, so verify afterwards
     # rather than trusting the exit status.
     echo "✓ Existing .env found — preserving your secrets"
+    IS_UPGRADE=1
 
     if grep -q '^SPARTA_VERSION=' .env; then
         CURRENT_VERSION=$(grep '^SPARTA_VERSION=' .env | head -n1 | cut -d= -f2-)
@@ -262,30 +271,61 @@ fi
 SERVER_IP=$(hostname -I | awk '{print $1}')
 
 echo ""
-echo "╔════════════════════════════════════════════════════╗"
-echo "║  Sparta Console is ready!                          ║"
-echo "╚════════════════════════════════════════════════════╝"
-echo ""
-echo "  Open your browser and complete the setup wizard:"
-echo ""
-echo "  → https://${SERVER_IP}:8443"
-echo ""
-echo "  That is this server's own network address. If you are"
-echo "  reaching it from another machine, substitute whatever"
-echo "  address you use for this host."
-echo ""
-echo "  Then start the relay — it is NOT started by this"
-echo "  script, and nothing starts it for you:"
-echo ""
-echo "      docker compose --profile relay up -d relay"
-echo ""
-echo "  The --profile flag is required. Without it the relay"
-echo "  is silently skipped and no agent can connect."
-echo ""
-echo "  Your browser will warn about the certificate: nginx"
-echo "  serves a temporary self-signed one until the wizard"
-echo "  installs the real one. Safe to proceed."
-echo ""
+if [ "$IS_UPGRADE" -eq 1 ]; then
+    echo "╔════════════════════════════════════════════════════╗"
+    echo "║  Sparta Console upgraded and running               ║"
+    echo "╚════════════════════════════════════════════════════╝"
+    echo ""
+    echo "  Now on ${SPARTA_VERSION_DEFAULT}."
+    echo ""
+    echo "  There is NO wizard to complete. Your admin account,"
+    echo "  tunnels, certificates and data are unchanged — this"
+    echo "  replaced the images and the version line in .env,"
+    echo "  and nothing else."
+    echo ""
+    echo "  → https://${SERVER_IP}:8443"
+    echo ""
+    echo "  That is this server's own network address. If you are"
+    echo "  reaching it from another machine, substitute whatever"
+    echo "  address you use for this host."
+    echo ""
+    echo "  ⚠  The relay is STILL RUNNING THE OLD VERSION. This"
+    echo "     script does not restart it. Bring it up on the new"
+    echo "     one:"
+    echo ""
+    echo "      docker compose --profile relay up -d relay"
+    echo ""
+    echo "  Then upgrade your agents to ${SPARTA_VERSION_DEFAULT} as well."
+    echo "  There is no version negotiation between components, so"
+    echo "  a mismatched set fails as a connection problem with"
+    echo "  nothing pointing at versions as the cause."
+    echo ""
+else
+    echo "╔════════════════════════════════════════════════════╗"
+    echo "║  Sparta Console is ready!                          ║"
+    echo "╚════════════════════════════════════════════════════╝"
+    echo ""
+    echo "  Open your browser and complete the setup wizard:"
+    echo ""
+    echo "  → https://${SERVER_IP}:8443"
+    echo ""
+    echo "  That is this server's own network address. If you are"
+    echo "  reaching it from another machine, substitute whatever"
+    echo "  address you use for this host."
+    echo ""
+    echo "  Then start the relay — it is NOT started by this"
+    echo "  script, and nothing starts it for you:"
+    echo ""
+    echo "      docker compose --profile relay up -d relay"
+    echo ""
+    echo "  The --profile flag is required. Without it the relay"
+    echo "  is silently skipped and no agent can connect."
+    echo ""
+    echo "  Your browser will warn about the certificate: nginx"
+    echo "  serves a temporary self-signed one until the wizard"
+    echo "  installs the real one. Safe to proceed."
+    echo ""
+fi
 
 # ── Back up .env ─────────────────────────────────────────
 # Two failure paths above tell the customer to "restore .env from your
