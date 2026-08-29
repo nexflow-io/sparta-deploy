@@ -232,7 +232,9 @@ that single file by inode. `mv` swaps in a different file and the agent
 keeps reading the old one; `sed -i` and most editors do the same, since
 they write a temporary file and rename it. Use `cp`, `cat >`, or `scp`
 straight over the existing path. If the file has already been replaced,
-no reload can ever pick it up — recreate the container instead.
+no reload can pick it up — but you do not have to recreate the
+container: `docker restart <container>` re-resolves the mount, and the
+agent reads the new file.
 
 After you click Apply Config the console names the tunnels that need
 this.
@@ -241,14 +243,15 @@ this.
 
 Reload applies to data source addresses **only**. The following are read
 when the agent establishes its connection to the relay, so changing any
-of them needs a freshly downloaded config and a redeployed agent:
+of them needs a freshly downloaded config and a `docker restart` — but
+not a redeployed container:
 
 - the tunnel identifier
 - a rotated tunnel secret
 - the relay URL
 
-Changing the App Agent's local port needs the container **recreated**,
-not reloaded — a published port cannot be changed on a running
+**One change, and only one, needs the container recreated:** the App
+Agent's local port. A published port cannot be changed on a running
 container.
 
 Sending `SIGHUP` to an App Agent is harmless: it logs that it is
@@ -335,6 +338,14 @@ Check that port 443 is reachable from the agent's network, that the
 relay is actually running (`docker compose ps` — remember the
 `--profile relay` flag), and that the agent is on the same release
 version as this install.
+
+**An agent still will not connect after I corrected its credential.**
+The relay reports a rejected credential as a permanent failure, and the
+agent then retries only every **5 minutes** — so a correct fix can look
+like no fix at all for that long. Its log reads `Auth failed. This looks
+permanent, not a network issue … Retrying in 300s`. Run
+`docker restart <container>` to force the attempt immediately rather
+than waiting it out.
 
 **An agent starts and immediately exits.**
 Check its logs for a permissions error reading the config. A mode 600
