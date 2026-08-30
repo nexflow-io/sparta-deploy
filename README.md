@@ -292,6 +292,18 @@ as protected.
 
 ## Upgrading
 
+Upgrading Sparta is two separate jobs: **the server** (console, nginx,
+relay) and **each agent**. They are upgraded differently, and the agents
+are the part most easily missed.
+
+You can do them at different times. Upgrading the server does not
+interrupt tunnels served by agents still on the previous version — this
+was measured across both Direct and Bridged tunnels. There is no need to
+coordinate a window across every machine at once: do the server, then
+work through the agents when you can.
+
+### The server
+
 Extract the new release **over** your existing install directory, then
 re-run the installer:
 
@@ -305,18 +317,115 @@ docker compose --profile relay up -d relay
 
 Extracting over the top is intentional. It keeps `.env` — and therefore
 your encryption key — exactly where it is. **Do not create a new
-directory for the new version:** a fresh directory has no `.env`, so
-the installer would generate a *new* encryption key and every existing
-agent identity would become unreadable.
+directory for the new version:** a fresh directory has no `.env`, so the
+installer would generate a *new* encryption key and every existing agent
+identity would become unreadable.
 
 Release archives never contain `.env`, so extraction cannot overwrite
 yours.
 
 `setup.sh` updates the version in `.env` for you and leaves every other
-value untouched. Remember to upgrade your agents to the same version.
+value untouched. It does not restart the relay, which is why the last
+command is separate — `setup.sh` will remind you.
 
-To roll back, set `SPARTA_VERSION` in `.env` back to the previous
-version and re-run `./setup.sh`.
+**Check the extraction actually happened.** `tar` reports success even
+when it writes nothing — for example if the install directory is not
+writable by your user. The old `setup.sh` then runs and prints a
+benign-looking "version already X" message, and you are still on the old
+release with no error anywhere.
+
+```bash
+grep SPARTA_VERSION_DEFAULT /opt/sparta/setup.sh
+```
+
+That must show the version you just downloaded. If it shows the old one,
+the extraction did nothing — check the directory's ownership and
+re-extract with `sudo` if needed.
+
+**Your database is migrated automatically.** The console applies any
+schema changes at startup and takes a backup first. Both are reported in
+`docker logs sparta-console`, including the path of the backup. If a
+migration fails the console **refuses to start** rather than run against
+a half-changed database, and names that backup. Nothing is required from
+you in the normal case.
+
+### Each agent
+
+**Agents are not upgraded by restarting them.** `docker restart` reuses
+the image the container was created from, so the agent comes back up,
+reports healthy, connects to the relay and carries traffic — still on
+the old version, with nothing reporting a problem.
+
+Upgrading an agent means **recreating the container** on the new image.
+Its config file is untouched: you are replacing the container, not the
+configuration, and you do not need to re-download anything.
+
+On the machine each agent runs on:
+
+```bash
+# 1. Get the new image
+docker pull spartahq/sparta:agent-<new-version>
+
+# 2. Note how the current container is configured —
+#    you must reproduce these exactly
+docker inspect <container-name> --format \
+  'networks: {{range $k,$v := .NetworkSettings.Networks}}{{$k}} {{end}}
+ports:    {{json .HostConfig.PortBindings}}
+mounts:   {{range .Mounts}}{{.Source}} -> {{.Destination}} {{end}}
+user:     {{.Config.User}}'
+
+# 3. Replace the container
+docker stop <container-name>
+docker rm <container-name>
+docker run -d \
+  --name <container-name> \
+  --restart unless-stopped \
+  --user $(id -u):$(id -g) \
+  -v /absolute/path/to/agent_config.yaml:/etc/sparta/agent_config.yaml \
+  spartahq/sparta:agent-<new-version>
+
+# 4. Confirm it came back on the new version
+docker ps --filter name=<container-name> \
+  --format '{{.Names}}\t{{.Image}}\t{{.Status}}'
+```
+
+Step 2 matters. The `docker run` above is the minimum; your agent may
+need more:
+
+| If the agent… | add |
+|---|---|
+| is an **App Agent** | `-p <listen-port>:<listen-port>`, the port from its config |
+| reaches a database **running in Docker on the same host** | `--network <that-network>`, so it can resolve the container by name |
+| runs as a specific user | `--user <uid>:<gid>` as reported above |
+
+**Use an absolute path for the config mount.** The command the console
+generates uses `$(pwd)`, which only works when run from the directory
+holding the config file. Run it from anywhere else and Docker silently
+creates an empty directory at that path instead, and the agent will not
+start.
+
+**Skipping versions is fine.** An agent several releases behind upgrades
+directly to the current version; there is no need to step through the
+ones in between.
+
+**Then confirm the whole set:**
+
+```bash
+docker ps --format 'table {{.Names}}\t{{.Image}}'
+```
+
+Every Sparta image should carry the same version tag. There is no
+version negotiation between components, so a long-term mismatch is not
+supported even though it survives a short one.
+
+### Rolling back
+
+Set `SPARTA_VERSION` in `.env` back to the previous version and re-run
+`./setup.sh`.
+
+If the newer version applied a schema migration, the console will refuse
+to start on the older images rather than let old code write to a newer
+schema. The pre-migration backup named in the logs is the recovery path.
 
 ---
 
