@@ -342,12 +342,14 @@ That must show the version you just downloaded. If it shows the old one,
 the extraction did nothing — check the directory's ownership and
 re-extract with `sudo` if needed.
 
-**Your database is migrated automatically.** The console applies any
-schema changes at startup and takes a backup first. Both are reported in
-`docker logs sparta-console`, including the path of the backup. If a
-migration fails the console **refuses to start** rather than run against
-a half-changed database, and names that backup. Nothing is required from
-you in the normal case.
+**Your database is migrated automatically.** If a release changes the
+schema, the console takes a backup first and applies the change at
+startup, reporting both in `docker logs sparta-console` including the
+backup's path. If a release changes nothing, you will see a single
+`Database schema up to date` line and no backup is taken — that is
+normal, not a failed upgrade. Should a migration ever fail, the console
+**refuses to start** rather than run against a half-changed database,
+and names the backup it took.
 
 ### Each agent
 
@@ -380,7 +382,7 @@ docker rm <container-name>
 docker run -d \
   --name <container-name> \
   --restart unless-stopped \
-  --user $(id -u):$(id -g) \
+  --user <uid>:<gid> \
   -v /absolute/path/to/agent_config.yaml:/etc/sparta/agent_config.yaml \
   spartahq/sparta:agent-<new-version>
 
@@ -396,7 +398,12 @@ need more:
 |---|---|
 | is an **App Agent** | `-p <listen-port>:<listen-port>`, the port from its config |
 | reaches a database **running in Docker on the same host** | `--network <that-network>`, so it can resolve the container by name |
-| runs as a specific user | `--user <uid>:<gid>` as reported above |
+
+Use the `user:` value step 2 reported. `$(id -u):$(id -g)` — which the
+console's deploy command uses — is only correct if the agent happens to
+run as you; a container created by someone else, or by an older release,
+may not. The config file is mode 600, so a wrong uid means the agent
+cannot read it and will not start.
 
 **Use an absolute path for the config mount.** The command the console
 generates uses `$(pwd)`, which only works when run from the directory
@@ -420,12 +427,28 @@ supported even though it survives a short one.
 
 ### Rolling back
 
-Set `SPARTA_VERSION` in `.env` back to the previous version and re-run
-`./setup.sh`.
+Set `SPARTA_VERSION` in `.env` back to the previous version, then bring
+the stack up directly:
 
-If the newer version applied a schema migration, the console will refuse
-to start on the older images rather than let old code write to a newer
-schema. The pre-migration backup named in the logs is the recovery path.
+```bash
+cd /opt/sparta
+docker compose --profile relay up -d
+```
+
+**Do not re-run `./setup.sh` to roll back.** Extraction already replaced
+it with the *new* release's copy, and it rewrites `SPARTA_VERSION` in
+`.env` to its own version unconditionally. It reports this as
+`✓ Version updated: <old> → <new>` — a success message in the opposite
+direction to the one you asked for, leaving you on the release you were
+trying to leave.
+
+Alternatively, re-extract the previous release's tarball over
+`/opt/sparta` and run *its* `setup.sh`. That makes the old version the
+installer's own default, so reconciliation carries `.env` down for you.
+
+Agents do not need to be rolled back to match. A server running an older
+release than its agents carries traffic normally; recreate them on the
+older tag at your convenience, using the procedure above.
 
 ---
 
