@@ -290,6 +290,115 @@ as protected.
 
 ---
 
+## Replacing the server certificate
+
+Sparta presents a TLS certificate to browsers and to agents, and every
+certificate expires — 90 days from Let's Encrypt, usually a year from a
+commercial issuer. Nothing renews it for you.
+
+**The ordinary way to replace it is in the console**, under
+**Settings → TLS Certificate**. That panel shows the current expiry,
+warns inside 30 days, validates the new pair before writing anything,
+and reloads nginx for you. Use it if you can reach it.
+
+This section is for when you cannot — an expired certificate makes
+browsers warn before they let you through, and some refuse outright.
+The procedure below needs shell access to the machine running Sparta.
+
+### First, find the paths your install actually uses
+
+The certificate paths are written into the nginx config when Sparta is
+installed, and they differ between installs — a self-signed install
+points somewhere else entirely. **Read your own config rather than
+assuming**, or you will replace a file nginx is not reading and nothing
+will change:
+
+```bash
+docker exec sparta-nginx sh -c \
+  "grep -h 'ssl_certificate' /etc/sparta/nginx/*.conf | sort -u"
+```
+
+A typical install prints:
+
+```
+ssl_certificate     /etc/sparta/certs/cert.pem;
+ssl_certificate_key /etc/sparta/certs/key.pem;
+```
+
+Those are paths **inside the container**. The directory is a Docker
+volume, and this is where it lives on the host:
+
+```bash
+docker volume inspect sparta_sparta_certs --format '{{.Mountpoint}}'
+```
+
+If your `ssl_certificate` line names a different directory, find its
+volume with `docker volume ls | grep sparta` and inspect that one
+instead.
+
+### Replace the two files
+
+Copy your new certificate and key over the existing files, keeping the
+same names:
+
+```bash
+CERTS=$(docker volume inspect sparta_sparta_certs --format '{{.Mountpoint}}')
+
+sudo cp fullchain.pem "$CERTS/cert.pem"
+sudo cp privkey.pem   "$CERTS/key.pem"
+sudo chown 999:999    "$CERTS/cert.pem" "$CERTS/key.pem"
+sudo chmod 644        "$CERTS/cert.pem"
+sudo chmod 600        "$CERTS/key.pem"
+```
+
+**Use the full chain, not the server certificate alone.** Agents verify
+the whole chain, and a leaf-only file is the most common replacement
+that looks correct and still fails at connection time.
+
+The ownership matters: nginx reads these as uid 999, and a file it
+cannot read fails the same way a missing one does.
+
+### What happens next
+
+Nothing to restart. nginx watches these files and picks up the change on
+its own, normally within about ten seconds:
+
+- it hashes both files every 5 seconds
+- it acts only when the hash is **stable across two polls**, so it never
+  reloads between your two `cp` commands
+- it then runs `nginx -t`, which reads and validates the certificate
+  pair, not just the config syntax
+- only if that passes does it run `nginx -s reload`
+
+**If the pair is bad, nothing happens to your running server.** The
+`nginx -t` fails, the reload is skipped, the previous certificate keeps
+being served, and the watcher retries on the next change. A mismatched
+key or a truncated file cannot take the listener down.
+
+Confirm it took:
+
+```bash
+docker logs sparta-nginx --tail 20 | grep -i certificate
+```
+
+`Certificate changed - reloading nginx...` means it reloaded. Then check
+what is actually being served:
+
+```bash
+echo | openssl s_client -connect localhost:443 -servername YOUR_DOMAIN 2>/dev/null \
+  | openssl x509 -noout -subject -issuer -enddate
+```
+
+### Connected agents are not interrupted
+
+`nginx -s reload` starts new workers and lets existing connections
+drain, so agents hold their WebSocket through it. No reconnection is
+needed and no tunnel drops. This is a reload, not a restart —
+`docker restart sparta-nginx` **would** drop the agent connections, and
+is not needed here.
+
+---
+
 ## Upgrading
 
 Upgrading Sparta is two separate jobs: **the server** (console, nginx,
