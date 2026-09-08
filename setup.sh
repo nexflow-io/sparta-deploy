@@ -132,6 +132,13 @@ if [ -f .env ]; then
             exit 1
         fi
     fi
+
+    # The create branch below chmods .env at birth, but an upgrade
+    # preserves whatever the previous install left. An .env created by
+    # an older setup.sh -- or by hand -- keeps its mode through every
+    # future upgrade, so make the mode self-healing here.
+    # Idempotent: an already-600 file is unaffected.
+    chmod 600 .env
 else
     echo "Creating default .env..."
     cat > .env << EOF
