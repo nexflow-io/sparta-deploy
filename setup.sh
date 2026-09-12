@@ -275,7 +275,6 @@ if [ "$HEALTHY" -ne 1 ]; then
     exit 1
 fi
 
-SERVER_IP=$(hostname -I | awk '{print $1}')
 
 echo ""
 if [ "$IS_UPGRADE" -eq 1 ]; then
@@ -290,11 +289,11 @@ if [ "$IS_UPGRADE" -eq 1 ]; then
     echo "  replaced the images and the version line in .env,"
     echo "  and nothing else."
     echo ""
-    echo "  → https://${SERVER_IP}:8443"
+    echo "  → https://<your-server-address>:8443"
     echo ""
-    echo "  That is this server's own network address. If you are"
-    echo "  reaching it from another machine, substitute whatever"
-    echo "  address you use for this host."
+    echo "  Use whatever address you already reach this host on."
+    echo "  The console listens on all interfaces, so any address"
+    echo "  that reaches this host works."
     echo ""
     echo "  ⚠  The relay is STILL RUNNING THE OLD VERSION. This"
     echo "     script does not restart it. Bring it up on the new"
@@ -314,11 +313,11 @@ else
     echo ""
     echo "  Open your browser and complete the setup wizard:"
     echo ""
-    echo "  → https://${SERVER_IP}:8443"
+    echo "  → https://<your-server-address>:8443"
     echo ""
-    echo "  That is this server's own network address. If you are"
-    echo "  reaching it from another machine, substitute whatever"
-    echo "  address you use for this host."
+    echo "  Use whatever address you already reach this host on."
+    echo "  The console listens on all interfaces, so any address"
+    echo "  that reaches this host works."
     echo ""
     echo "  Then start the relay — it is NOT started by this"
     echo "  script, and nothing starts it for you:"
