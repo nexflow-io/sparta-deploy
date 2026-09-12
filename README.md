@@ -16,7 +16,7 @@ separately, on the networks where your databases and applications live.
 | File | Purpose |
 |---|---|
 | `setup.sh` | Installer. Generates secrets, pulls images, starts the console. |
-| `docker-compose.yml` | Service definitions. Pinned to one release version. |
+| `docker-compose.yml` | Service definitions. Images pinned via `SPARTA_VERSION`. |
 | `README.md` | This file. |
 
 Nothing else is needed. There is no source tree to build.
@@ -29,12 +29,15 @@ Nothing else is needed. There is no source tree to build.
   - `apt install docker.io` does **not** include Compose v2. On
     Ubuntu/Debian you also need `apt install docker-compose-v2`.
 - **openssl** (present on most server distributions)
-- Registry credentials — emailed to you when you registered
+- Registry credentials. The images are private, so pulling them needs a
+  read-only credential. If you do not have one, email hello@sparta.systems
+  and ask for access.
 - Inbound network access to the host on ports **443** and **8443**
   (see *Firewall* below)
 
-The installer checks all three prerequisites and stops with a clear
-message if any is missing.
+The installer checks Docker, Compose v2 and openssl, and stops with a
+clear message if any is missing. It cannot check your credentials or
+your firewall.
 
 ---
 
@@ -97,6 +100,21 @@ This is deliberate. The relay publishes the tunnel port range you chose
 in the wizard, and a published port range cannot be changed on a
 running container. Starting it before the wizard would publish the
 wrong range.
+
+### Optional: set a support address
+
+The console shows a contact address to the people who use it. It ships
+empty, and shows nothing at all until you set one. To set it, add this
+to `.env` in your install directory:
+
+    SPARTA_SUPPORT_EMAIL=support@yourcompany.example
+
+Then restart the console:
+
+    docker compose up -d console
+
+Changing it later needs only that edit and a restart, never a
+reinstall.
 
 ---
 
@@ -285,8 +303,9 @@ cp /opt/sparta/.env ~/sparta-env-backup      # then move it OFF this server
 docker volume ls | grep sparta               # confirm the volume names
 ```
 
-`.env` is `chmod 600` because it holds secrets. Keep your copy at least
-as protected.
+`setup.sh` creates `.env` as `600`. The console then regroups it to `660`
+so its unprivileged process can write the wizard's output; you keep
+ownership. Keep your own backup copy at `600`.
 
 ---
 

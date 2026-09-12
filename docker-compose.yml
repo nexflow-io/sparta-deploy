@@ -21,7 +21,7 @@
 #   5. Console stays at https://your-server:8443
 #
 # ── Version pinning ──────────────────────────────────────────
-# All four images are pinned to ONE date tag via SPARTA_VERSION.
+# All four images are pinned to ONE version tag via SPARTA_VERSION.
 # They are built, tested and released as a set, and there is no
 # protocol version negotiation between console, relay and agent —
 # so a mismatched set fails as a connection problem with no
