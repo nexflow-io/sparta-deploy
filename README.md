@@ -312,8 +312,8 @@ ownership. Keep your own backup copy at `600`.
 ## Replacing the server certificate
 
 Sparta presents a TLS certificate to browsers and to agents, and every
-certificate expires — 90 days from Let's Encrypt, usually a year from a
-commercial issuer. Nothing renews it for you.
+certificate expires — lifetimes vary by issuer, commonly from a few
+months to a year. Nothing renews it for you.
 
 **The ordinary way to replace it is in the console**, under
 **Settings → TLS Certificate**. That panel shows the current expiry,
