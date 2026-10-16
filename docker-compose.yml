@@ -17,16 +17,18 @@
 #      a temporary self-signed cert until the wizard installs the real
 #      one, so expect a browser warning on this first visit.
 #   3. Complete the wizard.
-#   4. docker compose --profile relay up -d
-#   5. Console stays at https://your-server:8443
+#   4. Activate a licence under Settings. Sparta runs only with one.
+#   5. docker compose --profile relay up -d
+#   6. Console stays at https://your-server:8443
 #
 # ── Version pinning ──────────────────────────────────────────
-# All four images are pinned to ONE version tag via SPARTA_VERSION.
+# All three images are pinned to ONE version tag via SPARTA_VERSION.
 # They are built, tested and released as a set, and there is no
-# protocol version negotiation between console, relay and agent —
-# so a mismatched set fails as a connection problem with no
-# indication that versions are the cause. Change the tag in ONE
-# place, or not at all.
+# protocol version negotiation between console and relay — so a
+# mismatched set fails as a connection problem with no indication
+# that versions are the cause. Change the tag in ONE place, or not
+# at all. Agents are not images: each agent host is upgraded with
+# the installer the console carries (see README.md).
 #
 # To upgrade: set SPARTA_VERSION in .env, then
 #   docker compose pull && docker compose up -d
@@ -141,11 +143,11 @@ services:
       - ENV_FILE_PATH=/var/sparta/env/.env
       - CONSOLE_SECRET_KEY=${CONSOLE_SECRET_KEY:-}
       - DB_ENCRYPTION_KEY=${DB_ENCRYPTION_KEY:-}
-      # The console generates the agent deploy commands shown on the
-      # Tunnels page, and those name an image tag. It has no version
-      # of its own, so the release version is passed in from the same
-      # .env line compose already reads for every image tag above --
-      # one source of truth rather than two that can disagree.
+      # The console reports the release version (/api/meta). It has
+      # no version of its own, so the version is passed in from the
+      # same .env line compose already reads for every image tag
+      # above -- one source of truth rather than two that can
+      # disagree.
       #
       # No :-REPLACE_ME fallback here, deliberately. Unset resolves to
       # empty, the API returns null, and the console renders a visible

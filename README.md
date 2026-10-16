@@ -6,8 +6,9 @@ another cloud — without opening that database to the internet and
 without a VPN.
 
 This package installs the **relay side**: the console you administer it
-from, the relay itself, and the TLS front end. Agents are deployed
-separately, on the networks where your databases and applications live.
+from, the relay itself, and the TLS front end. Agents are installed
+separately, on the networks where your databases and applications live —
+see *Agents* below.
 
 ---
 
@@ -32,6 +33,9 @@ Nothing else is needed. There is no source tree to build.
 - Registry credentials. The images are private, so pulling them needs a
   read-only credential. If you do not have one, email hello@sparta.systems
   and ask for access.
+- A **licence**. Sparta runs only with one: without it no tunnel is
+  served and none can be created. Registering brings a 30-day trial
+  licence with the registry credential — a file ending in `.sparlic`.
 - Inbound network access to the host on ports **443** and **8443**
   (see *Firewall* below)
 
@@ -82,7 +86,25 @@ username and password.
 > **Domain mode is strongly preferred.** With a real certificate,
 > agents verify the relay's TLS identity. In IP mode a self-signed
 > certificate is generated for you and agents cannot verify it — usable
-> for evaluation, not recommended for production.
+> for evaluation, not recommended for production. An install that
+> starts in IP mode can move to domain mode later, under
+> **Settings → Deployment mode**, without reinstalling.
+
+### Then activate your licence
+
+Sign in, open **Settings**, and in the licence card choose **Activate
+License Key**. Choose your `.sparlic` file and click **Activate
+License**.
+
+Until a licence is active, a notice above every page says so, and
+nothing can be created. Once it is active, the same place shows the
+licence's last day whenever there is something to act on. A trial covers
+one tunnel for 30 days. A paid licence runs to the end of its paid
+period and then for a 14-day grace period. When a licence ends without a
+new one activated, **every tunnel stops** — nothing is deleted, and
+everything comes back when a valid licence is activated, with no Apply
+Config and nothing to do on any agent's host. The console manual
+(**Documentation → Licensing**) has the details.
 
 ### Then start the relay
 
@@ -151,13 +173,14 @@ then browse to `https://localhost:8443`.
 
 ---
 
-## Deploying agents
+## Agents
 
 Agents are **not** part of this package, and do not run here. They run
 on the networks where your databases and applications live — that is
 the point of the product.
 
-Every tunnel has **two** agents, and they are not interchangeable:
+Every tunnel has a **Data Agent**, and a tunnel in Bridged mode also has
+an **App Agent**. They are not interchangeable:
 
 | Agent | Runs where | Inbound firewall |
 |---|---|---|
@@ -165,115 +188,171 @@ Every tunnel has **two** agents, and they are not interchangeable:
 | **App Agent** | A machine your application can reach | **Yes** — the local port you choose. |
 
 The traffic path is: your application → App Agent → relay → Data Agent
-→ your database.
+→ your database. In Direct mode there is no App Agent: your application
+connects to the relay's port for the data source.
 
-### Getting each agent's config
+An agent is one program, run as a systemd service on a Linux host. It is
+installed from one file, the **agent installer**, which your console
+carries and gives to an administrator; the agent inside it is the
+version your console was built with.
 
-Create a tunnel in the console, open that tunnel's **Details** panel on
-the Tunnels page, and download a config for **each** role. The two files
-are different and are not interchangeable:
+### Agent hosts
 
-| Role | Downloaded file |
-|---|---|
-| Data Agent | `agent_config.yaml` |
-| App Agent | `agent_config_listen.yaml` |
+An agent host needs:
 
-Each holds the relay URL, the tunnel identifier and that agent's own
-credential.
+- **x86_64**, running **systemd**, with **glibc 2.34 or newer**.
+  Tested: **RHEL 9, Ubuntu 22.04 and Debian 12.** The installer checks the
+  machine, glibc and systemd, and refuses — saying why — on a host that
+  does not meet them.
+- **`sudo`**, to install the agent as a system service.
+- **Outbound** access to the relay on 443. Nothing inbound, except an App
+  Agent's local port.
+- These commands, from these packages. Most are on any server install;
+  **`openssl` is missing from minimal Ubuntu and Debian images**, and the
+  installer will not run without it — it is what checks the agent's
+  signature, and the installer never skips that check and never installs
+  a package itself.
 
-Next to each download button the console shows the exact `docker run`
-command for that role. **Use the command the console gives you** rather
-than writing your own — the App Agent's includes port flags that depend
-on the local port you chose, and both include two flags that must stay
-together.
+  | Commands | RHEL 9 | Ubuntu 22.04, Debian 12 |
+  |---|---|---|
+  | `sh` | `bash` | `dash` |
+  | `head` `tail` `od` `wc` `tr` `sha256sum` `mktemp` `install` `env` `readlink` `ln` `mv` `cat` `rm` `chmod` `rmdir` `id` `uname` `sleep` `cut` | `coreutils` (or `coreutils-single`) | `coreutils` |
+  | `getconf` `getent` | `glibc-common` | `libc-bin` |
+  | `groupadd` `useradd` (and `userdel` `groupdel` for `--purge`) | `shadow-utils` | `passwd` |
+  | `flock` | `util-linux-core` | `util-linux` |
+  | `sed` `tar` `gzip` `openssl` | the same names | the same names |
+  | `systemctl` `journalctl` | `systemd` | `systemd` |
+  | `sudo` | `sudo` | `sudo` |
 
-### `chmod 600` and `--user` go together
+  On an SELinux host the installer also uses `restorecon` and
+  `selinuxenabled` (`policycoreutils`, `libselinux-utils`) when they are
+  present, to give its files their default labels.
 
-The config file holds a live tunnel secret, so the console's commands
-set it to mode 600 and run the container as your own uid and gid:
+> **Ubuntu 25.10 and later are not yet tested.** From 25.10 Ubuntu
+> replaces the core commands above and `sudo` with Rust rewrites
+> (`coreutils-from-uutils`, `sudo-rs`). The installer has been proven on
+> the commands RHEL 9, Ubuntu 22.04 and Debian 12 ship.
 
-```bash
---user $(id -u):$(id -g)
-```
+### Installing an agent
 
-**Both are required together.** With a 600 file and no `--user`, the
-agent cannot read its own config and will not start.
+The steps, with the exact command for that agent, are on the tunnel in
+the console: open its **Details**, then the **Data Agent** or **App
+Agent** panel, and follow **Installing the agent**. In outline:
+
+1. Download the agent installer (`sparta-agent-install.sh`) from the
+   panel. Only an administrator can download the installer or a config:
+   a config holds the agent's secret.
+2. Download that agent's config from the same panel — `agent_config.yaml`
+   for a Data Agent, `agent_config_listen.yaml` for an App Agent.
+3. Copy both files to the agent's host, into one directory.
+4. Run the one command the panel shows. It checks the host and the
+   config before changing anything, installs the agent, puts the config
+   where only the agent's own service account can read it, and starts
+   the agent as a service that also starts at boot.
+5. Check that it is running, with the status command the panel shows.
+
+**Use the command the panel gives you** rather than writing your own.
+Each agent's service is named after its tunnel and role
+(`sparta-agent@<name>`), and the console works that name out. One host
+can run the agents of several tunnels, each under its own name; the same
+installer file installs any agent of your console.
+
+The installer leaves a control command on the host,
+**`/usr/local/sbin/sparta-agent`**, which takes the same options without
+needing the installer file again. Always give it with its full path:
+`sudo` on the RHEL family does not search `/usr/local/sbin`.
+
+### Checking the installer before you run it
+
+The installer verifies its own signature before it installs anything,
+with the host's `openssl`, and has no option to skip that. If your
+security team wants to check it by hand first, the file's own header —
+plain text, readable with `head -n 60 sparta-agent-install.sh` — gives
+the commands: how to cut out the script, the signature and the agent,
+check the signature with `openssl`, and print the signing key's
+fingerprint. Compare that fingerprint with the one published at
+`https://<download-url>/codesign-fingerprint.txt`.
+
+### What an agent can do on its host
+
+- It runs as one system user, `sparta-agent`, shared by every agent on
+  the host — so one agent's config is readable by another agent on the
+  same host. Each config sits in `/etc/sparta/<name>.yaml`, mode 600.
+- It is contained by systemd's sandbox: `NoNewPrivileges`,
+  `ProtectSystem=strict`, `ProtectHome`, `PrivateTmp`, `PrivateDevices`,
+  `ProtectKernelTunables`, `ProtectKernelModules`, `ProtectKernelLogs`,
+  `ProtectControlGroups`, an empty capability set, network families
+  limited to IPv4, IPv6 and Unix sockets, `@system-service` system calls
+  only, and nothing executable outside its own directory and the
+  system's library directories.
+- Under SELinux it runs **unconfined** (`unconfined_service_t`); the
+  systemd sandbox is what contains it.
+- The installer makes no network call and installs no package. It
+  creates the `sparta-agent` user and group, installs and enables the
+  agent's systemd unit, and otherwise touches only its own files.
+- An agent reports its version to the relay, and the console shows it on
+  the tunnel list. That version is the agent's own word, for
+  information; nothing is allowed or refused on it.
 
 ### The App Agent's local port
 
-The App Agent listens on a port you choose in the console *before*
-downloading its config. Point your application at the App Agent host on
-that port — the port is reachable by any machine on your network that
-can reach that host, not just the host itself.
+The App Agent listens on a port you choose in its panel *before*
+downloading its config: from 1024 to 65535, free on its host. The config
+holds the port.
 
-Set the port in the console and the value is baked into the downloaded
-file. Leave it blank and the file uses a `${LISTEN_PORT}` placeholder
-instead, so the same file can be deployed on several machines with each
-one choosing its port at run time.
+It listens on **every network interface** of its host, so any machine
+that can reach the host on that port can use the tunnel. Point your
+application at that host and port, and open the port in the host's
+firewall to your application and to nothing wider.
 
-This port must be open on that machine's firewall.
+### Changing an agent's config
 
-### Version matching
+An agent reads its config when it starts, and nothing sends it a new
+one. Whenever something the config holds changes in the console — the
+agent's secret, the relay's address, its proxy or CA, the tunnel's data
+sources, an App Agent's port — the agent goes on using what it has until
+you give it the new file.
 
-Agents must run the **same release version** as this install. There is
-no version negotiation between components, so a mismatched set fails as
-a connection problem with nothing pointing at versions as the cause.
+The steps are in the agent's panel, under **Updating a running agent**:
+download the config again, copy it to the host, and run the replace
+command shown. **Replacing a config restarts the agent**, which
+interrupts the connections going through it. The new config is checked
+first, and if the agent does not start on it, the previous one is put
+back.
 
----
+A **Data Agent** has a second way, for a change to its data sources
+only: put the file in place and reload, as the panel shows. That
+interrupts nothing. A reload applies data source changes and nothing
+else; if anything else in the file changed, it refuses, says so, and
+applies nothing.
 
-## Changing a data source address
-
-A running Data Agent picks up a new data source address **without being
-redeployed** — the relay session survives and live streams are not
-dropped.
-
-But the agent reads its data sources from the config file it has
-mounted, and nothing pushes a new file to it. The new address has to
-reach that file first:
-
-1. Click **Apply Config** on the Tunnels page
-2. Re-download that tunnel's **Data Agent** config
-3. Overwrite the file the container already mounts — **in place**
-4. Reload the agent:
+### Seeing what your agents are doing
 
 ```bash
-docker kill -s HUP sparta-data-agent
+sudo /usr/local/sbin/sparta-agent --list
 ```
 
-**Do not skip steps 2 and 3.** A reload re-reads the *same* file. If the
-file has not changed, the agent reports a successful reload with no
-changes and carries on using the old address — and nothing, anywhere,
-reports an error.
+lists the agents on the host and what each is doing. For one agent, use
+the status and log commands its panel shows:
+`systemctl status sparta-agent@<name>` gives one status line — the
+relay's state and the last reload's outcome — and
+`sudo journalctl -u sparta-agent@<name>` gives its log. Reading the log
+needs root, or membership of a group that may read the journal (on
+RHEL 9: `adm`, `systemd-journal` or `wheel`).
 
-**Overwrite in place — do not replace the file.** The container mounts
-that single file by inode. `mv` swaps in a different file and the agent
-keeps reading the old one; `sed -i` and most editors do the same, since
-they write a temporary file and rename it. Use `cp`, `cat >`, or `scp`
-straight over the existing path. If the file has already been replaced,
-no reload can pick it up — but you do not have to recreate the
-container: `docker restart <container>` re-resolves the mount, and the
-agent reads the new file.
+### Taking an agent out
 
-After you click Apply Config the console names the tunnels that need
-this.
+```bash
+sudo /usr/local/sbin/sparta-agent --uninstall --name <name>
+```
 
-### What a reload does not cover
-
-Reload applies to data source addresses **only**. The following are read
-when the agent establishes its connection to the relay, so changing any
-of them needs a freshly downloaded config and a `docker restart` — but
-not a redeployed container:
-
-- the tunnel identifier
-- a rotated tunnel secret
-- the relay URL
-
-**One change, and only one, needs the container recreated:** the App
-Agent's local port. A published port cannot be changed on a running
-container.
-
-Sending `SIGHUP` to an App Agent is harmless: it logs that it is
-declining the reload and keeps running.
+stops the agent and keeps it from starting at boot. **Its config is
+kept** — and that config holds the tunnel's secret; add `--purge` to
+remove it as well. When the last config on a host is purged, the agent
+leaves the host entirely: every version, the systemd unit, the control
+command and the `sparta-agent` user. The journal stays. The `<name>` is
+the one `--list` shows. If the agent's config is gone for good, revoke
+or rotate its credential in the console.
 
 ---
 
@@ -285,11 +364,10 @@ declining the reload and keeps running.
 the only thing that can decrypt the credentials Sparta issued to your
 agents. Keep a copy somewhere other than this server.
 
-If you lose it:
-
-- your tunnels and data sources survive
-- but every agent identity becomes unreadable, and **every agent must
-  be redeployed** with a freshly downloaded config
+If you lose it, your tunnels and data sources survive, but every agent
+identity becomes unreadable, and every agent will need a newly issued
+credential and config. **If that happens, write to hello@sparta.systems
+before changing anything.**
 
 Your actual data lives in Docker volumes and would survive deleting the
 install directory. `.env` would not — leaving you with data that
@@ -316,9 +394,12 @@ certificate expires — lifetimes vary by issuer, commonly from a few
 months to a year. Nothing renews it for you.
 
 **The ordinary way to replace it is in the console**, under
-**Settings → TLS Certificate**. That panel shows the current expiry,
-warns inside 30 days, validates the new pair before writing anything,
-and reloads nginx for you. Use it if you can reach it.
+**Settings → TLS Certificate**. That panel shows the certificate nginx
+is configured to serve and its expiry, warns inside 30 days, validates
+the new pair before writing anything, and reloads nginx for you. Use it
+if you can reach it. In IP address mode there is no certificate of your
+own to replace: a certificate of your own comes with a change to domain
+mode, under **Settings → Deployment mode**.
 
 This section is for when you cannot — an expired certificate makes
 browsers warn before they let you through, and some refuse outright.
@@ -421,14 +502,8 @@ is not needed here.
 ## Upgrading
 
 Upgrading Sparta is two separate jobs: **the server** (console, nginx,
-relay) and **each agent**. They are upgraded differently, and the agents
-are the part most easily missed.
-
-You can do them at different times. Upgrading the server does not
-interrupt tunnels served by agents still on the previous version — this
-was measured across both Direct and Bridged tunnels. There is no need to
-coordinate a window across every machine at once: do the server, then
-work through the agents when you can.
+relay) and **each agent host**. They are upgraded differently, and the
+agents are the part most easily missed.
 
 ### The server
 
@@ -479,84 +554,53 @@ normal, not a failed upgrade. Should a migration ever fail, the console
 **refuses to start** rather than run against a half-changed database,
 and names the backup it took.
 
-### Each agent
+### Each agent host
 
-**Agents are not upgraded by restarting them.** `docker restart` reuses
-the image the container was created from, so the agent comes back up,
-reports healthy, connects to the relay and carries traffic — still on
-the old version, with nothing reporting a problem.
-
-Upgrading an agent means **recreating the container** on the new image.
-Its config file is untouched: you are replacing the container, not the
-configuration, and you do not need to re-download anything.
-
-On the machine each agent runs on:
+Upgrading the server does not upgrade any agent. After the server, on
+each agent host, run the installer **downloaded from the upgraded
+console** (any agent's panel offers it) with `--upgrade`:
 
 ```bash
-# 1. Get the new image
-docker pull spartahq/sparta:agent-<new-version>
-
-# 2. Note how the current container is configured —
-#    you must reproduce these exactly
-docker inspect <container-name> --format \
-  'networks: {{range $k,$v := .NetworkSettings.Networks}}{{$k}} {{end}}
-ports:    {{json .HostConfig.PortBindings}}
-mounts:   {{range .Mounts}}{{.Source}} -> {{.Destination}} {{end}}
-user:     {{.Config.User}}'
-
-# 3. Replace the container
-docker stop <container-name>
-docker rm <container-name>
-docker run -d \
-  --name <container-name> \
-  --restart unless-stopped \
-  --user <uid>:<gid> \
-  -v /absolute/path/to/agent_config.yaml:/etc/sparta/agent_config.yaml \
-  spartahq/sparta:agent-<new-version>
-
-# 4. Confirm it came back on the new version
-docker ps --filter name=<container-name> \
-  --format '{{.Names}}\t{{.Image}}\t{{.Status}}'
+sudo sh sparta-agent-install.sh --upgrade
 ```
 
-Step 2 matters. The `docker run` above is the minimum; your agent may
-need more:
+One run upgrades every agent on that host. Agents that were running are
+restarted on the new version; an agent that was stopped is left
+stopped. If an agent does not come back, the host is put back on the
+version it was running. The tunnel list in the console shows the version
+each agent reports.
 
-| If the agent… | add |
-|---|---|
-| is an **App Agent** | `-p <listen-port>:<listen-port>`, the port from its config |
-| reaches a database **running in Docker on the same host** | `--network <that-network>`, so it can resolve the container by name |
+The control command left on the host carries no agent, so an upgrade
+always needs the downloaded installer. An older installer than the one
+installed is refused unless you add `--allow-downgrade`.
 
-Use the `user:` value step 2 reported. `$(id -u):$(id -g)` — which the
-console's deploy command uses — is only correct if the agent happens to
-run as you; a container created by someone else, or by an older release,
-may not. The config file is mode 600, so a wrong uid means the agent
-cannot read it and will not start.
+### Upgrading from 0.1.9
 
-**Use an absolute path for the config mount.** The command the console
-generates uses `$(pwd)`, which only works when run from the directory
-holding the config file. Run it from anywhere else and Docker silently
-creates an empty directory at that path instead, and the agent will not
-start.
+0.1.10 changes two things that an install of 0.1.9 or earlier meets once:
 
-**Skipping versions is fine.** An agent several releases behind upgrades
-directly to the current version; there is no need to step through the
-ones in between.
+- **A licence is required.** An install with no licence stops every
+  tunnel when the upgraded console starts. Have your licence file ready
+  and activate it straight after the upgrade (*Then activate your
+  licence*, above); the tunnels come back as soon as it is active, with
+  no Apply Config and nothing to do on any agent's host.
+- **Agents are no longer containers.** Replace each agent's container
+  with an agent installed from the console:
+  1. Check the agent's host against *Agent hosts*, above. A host that
+     does not meet them needs replacing with one that does.
+  2. From the tunnel's panel in the upgraded console, download the
+     installer and that agent's config. An App Agent needs its local port
+     entered first (1024–65535).
+  3. On the host, stop and remove the agent's container
+     (`docker rm -f <container>`).
+  4. Install the agent with the command the panel shows.
 
-**Then confirm the whole set:**
-
-```bash
-docker ps --format 'table {{.Names}}\t{{.Image}}'
-```
-
-Every Sparta image should carry the same version tag. There is no
-version negotiation between components, so a long-term mismatch is not
-supported even though it survives a short one.
+  Replace every agent when you upgrade the server; do not leave
+  container agents running against an upgraded server.
 
 ### Rolling back
 
-Set `SPARTA_VERSION` in `.env` back to the previous version, then bring
-the stack up directly:
+**The server.** Set `SPARTA_VERSION` in `.env` back to the previous
+version, then bring the stack up directly:
 
 ```bash
 cd /opt/sparta
@@ -574,9 +618,15 @@ Alternatively, re-extract the previous release's tarball over
 `/opt/sparta` and run *its* `setup.sh`. That makes the old version the
 installer's own default, so reconciliation carries `.env` down for you.
 
-Agents do not need to be rolled back to match. A server running an older
-release than its agents carries traffic normally; recreate them on the
-older tag at your convenience, using the procedure above.
+**An agent host.** One earlier version is kept on each host:
+
+```bash
+sudo /usr/local/sbin/sparta-agent --rollback
+```
+
+puts every agent on the host back on the version the last `--upgrade`
+replaced, restarting those that are running. A second `--rollback` goes
+forward again.
 
 ---
 
@@ -587,7 +637,7 @@ older tag at your convenience, using the procedure above.
 Most confusing symptoms come down to a gap between what the console
 shows and what the relay has loaded. The console holds the tunnels you
 created; the relay serves only what is in its own config file. Those can
-differ — after a licence limit is exceeded, after a tunnel is
+differ — when a licence does not cover a tunnel, after a tunnel is
 deactivated, or when a change was never applied.
 
 ```bash
@@ -616,47 +666,75 @@ A previous run was interrupted. If this install has never worked,
 `rm .env && ./setup.sh`. If it *has* worked before, do not delete it —
 restore `.env` from your backup instead.
 
+**Nothing can be created, or every tunnel has stopped.**
+Read the notice above every page in the console: it says whether no
+licence is active or which licence ended, and when. Activate a valid
+licence under **Settings**; tunnels come back without Apply Config. An
+agent that was turned away while the tunnels were stopped retries every
+few minutes, so allow that long — or restart it on its host to force the
+attempt.
+
+**A tunnel is shown as suspended, or its agent is rejected with
+`Unknown tunnel_id`.**
+More tunnels are configured than the licence covers. The oldest keep
+working up to the licence's number; the rest are suspended — not
+deleted — and come back, oldest first, when a licence covering them is
+activated or another tunnel is deleted. The agent's message is
+misleading in this one case: from the relay's side the tunnel is simply
+not there.
+
 **Agents will not connect.**
-Check that port 443 is reachable from the agent's network, that the
-relay is actually running (`docker compose ps` — remember the
-`--profile relay` flag), and that the agent is on the same release
-version as this install.
+Check that a licence is active, that port 443 is reachable from the
+agent's network, and that the relay is actually running
+(`docker compose ps` — remember the `--profile relay` flag). Then read
+the agent's own log on its host (`sudo journalctl -u
+sparta-agent@<name>`).
 
 **An agent still will not connect after I corrected its credential.**
 The relay reports a rejected credential as a permanent failure, and the
 agent then retries only every **5 minutes** — so a correct fix can look
 like no fix at all for that long. Its log reads `Auth failed. This looks
 permanent, not a network issue … Retrying in 300s`. Run
-`docker restart <container>` to force the attempt immediately rather
-than waiting it out.
+`sudo systemctl restart sparta-agent@<name>` on its host to force the
+attempt immediately.
 
-**A tunnel looks normal in the console, but its agent is rejected with
-`Unknown tunnel_id`.**
+**An agent keeps restarting, or will not start.**
+systemd restarts a failed agent every five seconds for as long as it is
+enabled. `systemctl status sparta-agent@<name>` shows its state, and the
+reason is in its log, not on the terminal: `sudo journalctl -u
+sparta-agent@<name>`. To stop the retries, take it out with
+`--uninstall` (*Taking an agent out*, above).
 
-The tunnel exceeded your licence limit and was removed from the relay's
-config. The tunnel still exists and its secret is still valid — the
-agent's message is misleading in this one case, because from the relay's
-side the tunnel is simply not there. Look for an amber *Tunnel
-deactivated* line in the console's activity log.
-
-To restore it: upload a valid licence key, then **click Apply Config**.
-Nothing restores a tunnel on its own — enforcement only ever removes.
-The agent reconnects within five minutes, or immediately if you run
-`docker restart <container>`.
-
-**An agent starts and immediately exits.**
-Check its logs for a permissions error reading the config. A mode 600
-config needs `--user $(id -u):$(id -g)` on the `docker run` command.
+**`systemctl reload` failed.**
+The terminal shows only `Job for … failed` and a pointer to
+`systemctl status` and `journalctl`; the reason is in the agent's log.
+Most often the new file changed something other than data sources,
+which a reload refuses: use the replace command in the agent's panel
+instead.
 
 **A data source address change had no effect.**
-The agent was reloaded without a fresh config file. Follow all four
-steps in *Changing a data source address* above — a reload alone
-re-reads the file the agent already has.
+The agent is still using its old config. Give it the new one, as
+*Changing an agent's config* describes. To confirm, compare the address
+in the relay config (the command at the top of this section) with the
+address the agent's log says it is dialling.
 
-To confirm that is what happened, compare the address in the relay
-config (the command at the top of this section) against the address your
-agent's logs say it is dialling. If they differ, the agent is holding a
-stale file.
+**An agent's log says `[Errno 16] Device or resource busy` when it
+connects.**
+The host resolves names through a lookup module that the agent's
+sandbox cannot load — one outside `/usr/lib64` or
+`/usr/lib/x86_64-linux-gnu`, typically from a third-party directory or
+identity product. Give the agent a relay address it can resolve without
+that module, such as one in `/etc/hosts` or ordinary DNS.
+
+**An agent's log is gone after a reboot.**
+On RHEL 9 the journal is kept in memory only, by default. To keep it
+across reboots, create its directory and restart the journal service:
+`sudo mkdir -p /var/log/journal && sudo systemctl restart
+systemd-journald`.
+
+**After stopping an agent, `systemctl status` still says "connected".**
+systemd keeps the last status line an agent wrote. The unit's own state,
+on the line above it, is what to read.
 
 **Every tunnel reads "relay offline" but the relay looks healthy.**
 The services find each other by container name. Do not change
@@ -670,17 +748,20 @@ release.
 **What to send when you contact support.**
 
 Sparta is self-hosted, so we cannot look at your install. A first
-message containing these four things usually replaces a day of
+message containing these things usually replaces a day of
 back-and-forth:
 
 1. the redacted relay config, from the command at the top of this
    section
-2. `docker logs --tail 200 <your agent container>`
-3. `curl -sk https://localhost:8443/api/meta`, run on the Sparta host
-4. `docker ps --format 'table {{.Names}}\t{{.Image}}\t{{.Status}}'`
+2. `curl -sk https://localhost:8443/api/meta`, run on the Sparta host
+3. `docker ps --format 'table {{.Names}}\t{{.Image}}\t{{.Status}}'`, run
+   on the Sparta host
+4. on the agent's host: `sudo /usr/local/sbin/sparta-agent --list`, and
+   `sudo journalctl -u sparta-agent@<name> -n 200`
 
-**Never send `.env`, an unredacted `relay_config.yaml`, or any
-`agent_config.yaml`.** Each carries live secrets.
+**Never send `.env`, an unredacted `relay_config.yaml`, or any agent
+config** (`agent_config.yaml`, `agent_config_listen.yaml`, or a file
+under `/etc/sparta` on an agent host). Each carries live secrets.
 
 ---
 
@@ -693,4 +774,5 @@ docker compose --profile relay down -v       # ALSO DELETES ALL DATA
 ```
 
 `-v` removes the volumes holding your database, certificates and
-configuration. There is no undo.
+configuration. There is no undo. Agents are taken out on their own
+hosts — see *Taking an agent out*, above.

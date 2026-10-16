@@ -3,12 +3,12 @@ set -e
 
 cd "$(dirname "$0")"
 
-# The image tag every service is pinned to. All four images (console,
-# relay, nginx, agent) are built,
-# tested and released as a SET -- there is no protocol version
-# negotiation between console, relay and agent, so a mismatched set
-# fails as a connection problem with nothing pointing at versions as
-# the cause. Change this in one place, or not at all.
+# The image tag every service is pinned to. The three images (console,
+# relay, nginx) are built, tested and released as a SET -- there is no
+# protocol version negotiation between them, so a mismatched set fails
+# as a connection problem with nothing pointing at versions as the
+# cause. Change this in one place, or not at all. Agents are not images:
+# each agent host is upgraded with the installer the console carries.
 SPARTA_VERSION_DEFAULT="REPLACE_ME"
 
 # Set below when .env already exists, i.e. this run is an UPGRADE rather
@@ -301,10 +301,9 @@ if [ "$IS_UPGRADE" -eq 1 ]; then
     echo ""
     echo "      docker compose --profile relay up -d relay"
     echo ""
-    echo "  Then upgrade your agents to ${SPARTA_VERSION_DEFAULT} as well."
-    echo "  There is no version negotiation between components, so"
-    echo "  a mismatched set fails as a connection problem with"
-    echo "  nothing pointing at versions as the cause."
+    echo "  Then upgrade each agent host: download the installer"
+    echo "  from this console (any agent's panel) and run it there"
+    echo "  with --upgrade. Upgrading the server upgrades no agent."
     echo ""
 else
     echo "╔════════════════════════════════════════════════════╗"
