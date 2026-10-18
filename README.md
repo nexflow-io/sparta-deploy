@@ -125,9 +125,11 @@ wrong range.
 
 ### Optional: set a support address
 
-The console shows a contact address to the people who use it. It ships
-empty, and shows nothing at all until you set one. To set it, add this
-to `.env` in your install directory:
+The console's manual can show an address of your own as the one to
+write to for help with the product. It ships empty, and shows nothing
+at all until you set one. The licence notices do not use it: they
+always name hello@sparta.systems. To set it, add this to `.env` in
+your install directory:
 
     SPARTA_SUPPORT_EMAIL=support@yourcompany.example
 
@@ -145,7 +147,7 @@ reinstall.
 | Port | Open to | Why |
 |---|---|---|
 | **443** | The addresses your agents connect out from. `0.0.0.0/0` only if those addresses are unknown or change. | The one path agents use to reach the relay. |
-| **8443** | **Your admin IP only — never `0.0.0.0/0`.** | The admin console. |
+| **8443** | **Your admin IP only, or not at all (SSH tunnel, below) — never `0.0.0.0/0`.** | The admin console. |
 | Your tunnel range | Whatever connects to your databases through Sparta. | Chosen in the wizard; defaults to 15000–15200. |
 
 Agents dial *out* to the relay, so 443 only needs to accept connections
@@ -162,8 +164,8 @@ accepted.
 Port **80 is not published.** There is no HTTP-to-HTTPS redirect;
 `http://your-server` will simply refuse the connection. Use `https://`.
 
-If you would rather not expose 8443 at all, reach the console over an
-SSH tunnel instead:
+If you would rather not expose 8443 at all — the most secure choice —
+reach the console over an SSH tunnel instead:
 
 ```bash
 ssh -L 8443:localhost:8443 user@your-server -N
