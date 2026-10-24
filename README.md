@@ -225,15 +225,22 @@ An agent host needs:
   | `sed` `tar` `gzip` `openssl` | the same names | the same names |
   | `systemctl` `journalctl` | `systemd` | `systemd` |
   | `sudo` | `sudo` | `sudo` |
+  | the certificate authorities the host trusts | `ca-certificates` | `ca-certificates` |
+
+  An agent that verifies the relay's certificate (domain mode) trusts the
+  certificate authorities its host trusts (the `ca-certificates` bundle),
+  plus any CA given in the console. A host with neither is refused when
+  the agent starts, with the reason.
 
   On an SELinux host the installer also uses `restorecon` and
   `selinuxenabled` (`policycoreutils`, `libselinux-utils`) when they are
   present, to give its files their default labels.
 
-> **Ubuntu 25.10 and later are not yet tested.** From 25.10 Ubuntu
-> replaces the core commands above and `sudo` with Rust rewrites
-> (`coreutils-from-uutils`, `sudo-rs`). The installer has been proven on
-> the commands RHEL 9, Ubuntu 22.04 and Debian 12 ship.
+> **Ubuntu 25.10 and later.** From 25.10 Ubuntu replaces the core
+> commands above and `sudo` with Rust rewrites (`rust-coreutils`,
+> `sudo-rs`). On **Ubuntu 26.04** the installer has installed an agent,
+> replaced its config, and removed it with `--uninstall --purge`, each
+> first time. `--upgrade` and `--rollback` have not yet been run there.
 
 ### Installing an agent
 
@@ -676,14 +683,22 @@ agent that was turned away while the tunnels were stopped retries every
 few minutes, so allow that long — or restart it on its host to force the
 attempt.
 
-**A tunnel is shown as suspended, or its agent is rejected with
-`Unknown tunnel_id`.**
-More tunnels are configured than the licence covers. The oldest keep
-working up to the licence's number; the rest are suspended — not
-deleted — and come back, oldest first, when a licence covering them is
-activated or another tunnel is deleted. The agent's message is
-misleading in this one case: from the relay's side the tunnel is simply
-not there.
+**An agent is rejected with `Unknown tunnel_id`, or a tunnel is shown
+as suspended.**
+The agent reached the relay, and the relay is not serving that tunnel.
+Three causes:
+- the tunnel has not been applied yet (it needs a data source, then
+  **Apply Config**);
+- the tunnel is suspended under the licence: more tunnels are configured
+  than the licence covers, the oldest keep working up to its number, and
+  the rest are suspended, not deleted, and come back, oldest first, when
+  a licence covering them is activated or another tunnel is deleted;
+- or the tunnel was deleted, and the config on the host belongs to
+  nothing. Install the agent again from the tunnel that replaced it.
+
+An agent turned away like this waits five minutes before it tries again.
+After fixing the cause, allow that long, or restart it on its host to
+make it try at once: `sudo systemctl restart sparta-agent@<name>`.
 
 **Agents will not connect.**
 Check that a licence is active, that port 443 is reachable from the
