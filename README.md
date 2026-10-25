@@ -113,7 +113,12 @@ you:
 
 ```bash
 docker compose --profile relay up -d relay
+docker compose restart console
 ```
+
+The restart closes `.env` again: until the wizard has run, the console
+needs to write to it, and from its next start it no longer can (see
+*Back up your `.env`*, below).
 
 The `--profile relay` flag is required. Without it the relay is
 silently skipped and no agent can connect.
@@ -390,9 +395,12 @@ cp /opt/sparta/.env ~/sparta-env-backup      # then move it OFF this server
 docker volume ls | grep sparta               # confirm the volume names
 ```
 
-`setup.sh` creates `.env` as `600`. The console then regroups it to `660`
-so its unprivileged process can write the wizard's output; you keep
-ownership. Keep your own backup copy at `600`.
+`setup.sh` creates `.env` as `600`. Until the setup wizard has run, the
+console regroups it to `660` so that its unprivileged process can write the
+wizard's output; you keep ownership. From the console's first start after
+the wizard (the restart above, or any later one) it is `600` again. The
+group it was given stays on the file but has no access. Keep your own
+backup copy at `600`.
 
 ---
 
