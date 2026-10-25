@@ -527,6 +527,12 @@ tar xzf sparta-<new-version>.tar.gz
 docker compose --profile relay up -d relay
 ```
 
+**This host must still be logged in to Sparta's registry** — the
+`docker login` from your install, with the credentials from your
+registration email. `setup.sh` pulls the new images, and if the login is
+missing it stops at the pull and says so. Log in and run `./setup.sh`
+again; running it twice is safe.
+
 Extracting over the top is intentional. It keeps `.env` — and therefore
 your encryption key — exactly where it is. **Do not create a new
 directory for the new version:** a fresh directory has no `.env`, so the
@@ -547,12 +553,12 @@ benign-looking "version already X" message, and you are still on the old
 release with no error anywhere.
 
 ```bash
-grep SPARTA_VERSION_DEFAULT /opt/sparta/setup.sh
+grep '^SPARTA_VERSION_DEFAULT=' /opt/sparta/setup.sh
 ```
 
-That must show the version you just downloaded. If it shows the old one,
-the extraction did nothing — check the directory's ownership and
-re-extract with `sudo` if needed.
+That prints one line, and it must show the version you just
+downloaded. If it shows the old one, the extraction did nothing — check
+the directory's ownership and re-extract with `sudo` if needed.
 
 **Your database is migrated automatically.** If a release changes the
 schema, the console takes a backup first and applies the change at
@@ -608,8 +614,28 @@ installed is refused unless you add `--allow-downgrade`.
 
 ### Rolling back
 
-**The server.** Set `SPARTA_VERSION` in `.env` back to the previous
-version, then bring the stack up directly:
+**The server — only to a release with the same schema version.** Some
+releases change the console's database (*Your database is migrated
+automatically*, above). An older console cannot run a database a newer
+one has changed: it refuses to start, and the console stays down until
+you go forward again. Your tunnels keep running meanwhile, but you cannot
+manage them.
+
+| release | schema version |
+|---|---|
+| 0.1.9 | 3 |
+| 0.1.10 | 6 |
+| 0.1.11 | 6 |
+| 0.1.12 | 6 |
+
+So 0.1.12 rolls back to 0.1.11 or 0.1.10, and none of them to 0.1.9.
+Each release's notes say its schema version. If you have rolled back
+across a change and the console will not start, go forward again to the
+release you came from: it needs no migration and starts as it was.
+
+To roll back to a release with the same schema version, set
+`SPARTA_VERSION` in `.env` back to it, then bring the stack up
+directly:
 
 ```bash
 cd /opt/sparta
@@ -636,6 +662,10 @@ sudo /usr/local/sbin/sparta-agent --rollback
 puts every agent on the host back on the version the last `--upgrade`
 replaced, restarting those that are running. A second `--rollback` goes
 forward again.
+
+On a Debian or Ubuntu host, do not roll an agent back to 0.1.10: an
+agent from 0.1.10 cannot verify the relay's certificate there, and an
+agent with `tls_verify: true` will not connect. 0.1.11 and later can.
 
 ---
 
