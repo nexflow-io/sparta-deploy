@@ -244,8 +244,8 @@ An agent host needs:
 > **Ubuntu 25.10 and later.** From 25.10 Ubuntu replaces the core
 > commands above and `sudo` with Rust rewrites (`rust-coreutils`,
 > `sudo-rs`). On **Ubuntu 26.04** the installer has installed an agent,
-> replaced its config, and removed it with `--uninstall --purge`, each
-> first time. `--upgrade` and `--rollback` have not yet been run there.
+> replaced its config, upgraded it, rolled it back, and removed it with
+> `--uninstall --purge`.
 
 ### Installing an agent
 
@@ -319,6 +319,12 @@ that can reach the host on that port can use the tunnel. Point your
 application at that host and port, and open the port in the host's
 firewall to your application and to nothing wider.
 
+If the application runs on the agent's host itself, you can keep the
+port to that host: in the config, under `listen_data_sources`, set
+`host: 127.0.0.1`, and point the application at `localhost`. The console
+does not keep that change, so set it again in any config you download
+later.
+
 ### Changing an agent's config
 
 An agent reads its config when it starts, and nothing sends it a new
@@ -331,8 +337,21 @@ The steps are in the agent's panel, under **Updating a running agent**:
 download the config again, copy it to the host, and run the replace
 command shown. **Replacing a config restarts the agent**, which
 interrupts the connections going through it. The new config is checked
-first, and if the agent does not start on it, the previous one is put
-back.
+first. If the agent does not start on it, or was connected to its relay
+before and is not answered by it again within 30 seconds, the previous
+config is put back and the command says why.
+
+To move an agent to a relay it cannot reach yet — a new address whose
+name or certificate is not live yet — stop the agent first, then replace
+the config:
+
+```bash
+sudo systemctl stop sparta-agent@<name>
+sudo /usr/local/sbin/sparta-agent --config <file> --name <name>
+```
+
+An agent that was not connected is kept on its new config as long as it
+starts, and connects once the relay can be reached.
 
 A **Data Agent** has a second way, for a change to its data sources
 only: put the file in place and reload, as the panel shows. That
@@ -589,9 +608,13 @@ sudo sh sparta-agent-install.sh --upgrade
 
 One run upgrades every agent on that host. Agents that were running are
 restarted on the new version; an agent that was stopped is left
-stopped. If an agent does not come back, the host is put back on the
-version it was running. The tunnel list in the console shows the version
-each agent reports.
+stopped. Each restarted agent must come back: start, still be running 5
+seconds later, and — if it was connected to its relay before — be
+answered by its relay again within 30 seconds. If one does not, the host
+is put back on the version it was running, and the command says which
+agent and why. So upgrade the server first, and run `--upgrade` while
+the relay can be reached. The tunnel list in the console shows the
+version each agent reports.
 
 The control command left on the host carries no agent, so an upgrade
 always needs the downloaded installer. An older installer than the one
@@ -668,7 +691,8 @@ sudo /usr/local/sbin/sparta-agent --rollback
 ```
 
 puts every agent on the host back on the version the last `--upgrade`
-replaced, restarting those that are running. A second `--rollback` goes
+replaced, restarting those that are running. It is kept or undone as an
+upgrade is (*Each agent host*, above). A second `--rollback` goes
 forward again.
 
 On a Debian or Ubuntu host, do not roll an agent back to 0.1.10: an
