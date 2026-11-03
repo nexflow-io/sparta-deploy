@@ -418,7 +418,8 @@ docker volume ls | grep sparta               # confirm the volume names
 console regroups it to `660` so that its unprivileged process can write the
 wizard's output; you keep ownership. From the console's first start after
 the wizard (the restart above, or any later one) it is `600` again. The
-group it was given stays on the file but has no access. Keep your own
+group it was given stays on the file but has no access. An upgrade that
+changes the version line gives `.env` your own group. Keep your own
 backup copy at `600`.
 
 ---
