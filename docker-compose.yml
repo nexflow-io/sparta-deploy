@@ -79,6 +79,11 @@ services:
     image: spartahq/sparta:relay-${SPARTA_VERSION:-REPLACE_ME}
     container_name: sparta-relay
     restart: unless-stopped
+    # A stop waits for each agent's close to complete (finding 15 of the
+    # 0.1.13 stress test): about a round trip, but up to 10 s for an agent
+    # whose path has just died, then up to 6 s for work in flight. Docker's
+    # default of 10 s would kill the relay first.
+    stop_grace_period: 30s
     # Deliberately profiled, so setup.sh's `up -d console nginx` does
     # not start it. The relay must not start until the setup wizard has
     # run: the ports line below interpolates PORT_RANGE_START/END from
