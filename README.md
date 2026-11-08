@@ -192,7 +192,7 @@ an **App Agent**. They are not interchangeable:
 | Agent | Runs where | Inbound firewall |
 |---|---|---|
 | **Data Agent** | A machine that can reach your database | **None.** It only connects out. |
-| **App Agent** | A machine your application can reach | **Yes** — the local port you choose. |
+| **App Agent** | A machine your application can reach | **Yes** — a local port you choose for each data source. |
 
 The traffic path is: your application → App Agent → relay → Data Agent
 → your database. In Direct mode there is no App Agent: your application
@@ -213,7 +213,7 @@ An agent host needs:
   does not meet them.
 - **`sudo`**, to install the agent as a system service.
 - **Outbound** access to the relay on 443. Nothing inbound, except an App
-  Agent's local port.
+  Agent's local ports, one for each data source.
 - These commands, from these packages. Most are on any server install;
   **`openssl` is missing from minimal Ubuntu and Debian images**, and the
   installer will not run without it — it is what checks the agent's
@@ -308,29 +308,32 @@ fingerprint. Compare that fingerprint with the one published at
   the tunnel list. That version is the agent's own word, for
   information; nothing is allowed or refused on it.
 
-### The App Agent's local port
+### The App Agent's local ports
 
-The App Agent listens on a port you choose in its panel *before*
-downloading its config: from 1024 to 65535, free on its host. The config
-holds the port.
+The App Agent listens on a port of its own for each of the tunnel's data
+sources. Choose them in its panel, under **Local ports**, and click
+**Save ports** *before* downloading its config: each from 1024 to 65535,
+free on its host, no two the same. The config holds the ports, and the
+console keeps them, so a config downloaded again has the same ones.
 
 It listens on **every network interface** of its host, so any machine
-that can reach the host on that port can use the tunnel. Point your
-application at that host and port, and open the port in the host's
-firewall to your application and to nothing wider.
+that can reach the host on one of those ports can use the tunnel. Point
+your application at that host and the port of the data source it wants,
+and open the ports in the host's firewall to your application and to
+nothing wider.
 
 If the application runs on the agent's host itself, you can keep the
-port to that host: in the config, under `listen_data_sources`, set
-`host: 127.0.0.1`, and point the application at `localhost`. The console
-does not keep that change, so set it again in any config you download
-later.
+ports to that host: in the config, under `listen_data_sources`, set
+`host: 127.0.0.1` for each data source, and point the application at
+`localhost`. The console does not keep that change, so set it again in
+any config you download later.
 
 ### Changing an agent's config
 
 An agent reads its config when it starts, and nothing sends it a new
 one. Whenever something the config holds changes in the console — the
 agent's secret, the relay's address, its proxy or CA, the tunnel's data
-sources, an App Agent's port — the agent goes on using what it has until
+sources, an App Agent's ports — the agent goes on using what it has until
 you give it the new file.
 
 The steps are in the agent's panel, under **Updating a running agent**:
@@ -635,8 +638,8 @@ installed is refused unless you add `--allow-downgrade`.
   1. Check the agent's host against *Agent hosts*, above. A host that
      does not meet them needs replacing with one that does.
   2. From the tunnel's panel in the upgraded console, download the
-     installer and that agent's config. An App Agent needs its local port
-     entered first (1024–65535).
+     installer and that agent's config. An App Agent needs a local port
+     saved for each data source first (1024–65535).
   3. On the host, stop and remove the agent's container
      (`docker rm -f <container>`).
   4. Install the agent with the command the panel shows.
