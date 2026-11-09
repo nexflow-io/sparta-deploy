@@ -311,10 +311,14 @@ fingerprint. Compare that fingerprint with the one published at
 ### The App Agent's local ports
 
 The App Agent listens on a port of its own for each of the tunnel's data
-sources. Choose them in its panel, under **Local ports**, and click
+sources, on the machine it runs on. An application reaches a data source
+by connecting to that data source's port, and every application that
+uses the same data source connects to the same port. Choose the ports in
+the agent's panel, under **Ports this App Agent listens on**, and click
 **Save ports** *before* downloading its config: each from 1024 to 65535,
-free on its host, no two the same. The config holds the ports, and the
-console keeps them, so a config downloaded again has the same ones.
+free on its host, no two the same. They don't have to match the
+databases' own ports. The config holds the ports, and the console keeps
+them, so a config downloaded again has the same ones.
 
 It listens on **every network interface** of its host, so any machine
 that can reach the host on one of those ports can use the tunnel. Point
