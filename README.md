@@ -666,9 +666,10 @@ manage them.
 | 0.1.10 | 6 |
 | 0.1.11 | 6 |
 | 0.1.12 | 6 |
-| 0.1.13 | 6 |
+| 0.1.13 | 7 |
 
-So 0.1.13 rolls back to 0.1.12, 0.1.11 or 0.1.10, and none of them
+So 0.1.13 rolls back to none of them: its console moves the database
+to schema 7. 0.1.12 rolls back to 0.1.11 or 0.1.10, and none of them
 to 0.1.9.
 Each release's notes say its schema version. If you have rolled back
 across a change and the console will not start, go forward again to the
