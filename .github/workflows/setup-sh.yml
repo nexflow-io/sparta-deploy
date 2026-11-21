@@ -1,0 +1,26 @@
+# L42 -- setup.sh says only what it checked (tests/test_setup_sh.py).
+#
+# Runs on every push. Standard library only: the suite runs the real
+# setup.sh with a fake docker and openssl, so no Docker and no network.
+# release.sh in the sparta repo runs the same suite on the packaged
+# setup.sh before it builds a release archive.
+#
+# checkout@v6 and setup-python@v6 are the Node 24 releases, as in the
+# sparta repo's workflow.
+name: setup.sh
+
+on: [push, pull_request]
+
+permissions:
+  contents: read
+
+jobs:
+  setup-sh:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.12'
+      - name: Run L42 setup.sh suite
+        run: python3 tests/test_setup_sh.py

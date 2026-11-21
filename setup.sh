@@ -11,13 +11,17 @@ cd "$(dirname "$0")"
 # each agent host is upgraded with the installer the console carries.
 SPARTA_VERSION_DEFAULT="REPLACE_ME"
 
-# Set below when .env already exists, i.e. this run is an UPGRADE rather
-# than a first install. The closing banner branches on it. Telling an
-# upgrading customer to "complete the setup wizard" sends them looking
-# for a wizard they finished long ago, and reads as though the upgrade
-# discarded their install -- alarming in exactly the wrong way, at the
-# one moment they are most worried about their encryption key.
-IS_UPGRADE=0
+# What this run found and did, for the closing banner (B6, 0.1.14). The
+# banner used to branch on "an .env exists" alone and then announced an
+# upgrade, a changed version line and a relay on the old version -- none
+# of it checked. A rerun with nothing changed, a rerun before the wizard
+# ("There is NO wizard to complete"), and a rollback (README: run the
+# older release's setup.sh) all got that text. It now says only what is
+# set here and measured after the console is healthy (SETUP_STATE,
+# RELAY_STATE below).
+HAD_ENV=0
+VERSION_STATE=fresh     # fresh | unchanged | changed | added
+VERSION_FROM=""
 
 echo ""
 echo "╔════════════════════════════════════════════════════╗"
@@ -60,7 +64,12 @@ if ! command -v openssl &> /dev/null; then
     exit 1
 fi
 
+# Each check above says when it passed, not only the first (R6). --short
+# is in every Compose v2 this script has met; the full line is the
+# fallback.
 echo "✓ Docker detected: $(docker --version)"
+echo "✓ Docker Compose detected: $(docker compose version --short 2>/dev/null || docker compose version)"
+echo "✓ openssl detected: $(openssl version)"
 echo ""
 
 # ── Refuse to continue on a half-written .env ────────────
@@ -100,16 +109,19 @@ if [ -f .env ]; then
     # sed exits 0 whether or not it matched, so verify afterwards
     # rather than trusting the exit status.
     echo "✓ Existing .env found — preserving your secrets"
-    IS_UPGRADE=1
+    HAD_ENV=1
 
     if grep -q '^SPARTA_VERSION=' .env; then
         CURRENT_VERSION=$(grep '^SPARTA_VERSION=' .env | head -n1 | cut -d= -f2-)
         if [ "$CURRENT_VERSION" = "$SPARTA_VERSION_DEFAULT" ]; then
             echo "✓ Version already ${SPARTA_VERSION_DEFAULT} — no change needed"
+            VERSION_STATE=unchanged
         else
             sed -i "s|^SPARTA_VERSION=.*|SPARTA_VERSION=${SPARTA_VERSION_DEFAULT}|" .env
             if grep -q "^SPARTA_VERSION=${SPARTA_VERSION_DEFAULT}$" .env; then
                 echo "✓ Version updated: ${CURRENT_VERSION} → ${SPARTA_VERSION_DEFAULT}"
+                VERSION_STATE=changed
+                VERSION_FROM=$CURRENT_VERSION
             else
                 echo "ERROR: failed to update SPARTA_VERSION in .env."
                 echo ""
@@ -127,18 +139,21 @@ if [ -f .env ]; then
         echo "SPARTA_VERSION=${SPARTA_VERSION_DEFAULT}" >> .env
         if grep -q "^SPARTA_VERSION=${SPARTA_VERSION_DEFAULT}$" .env; then
             echo "✓ Version line added: ${SPARTA_VERSION_DEFAULT}"
+            VERSION_STATE=added
         else
             echo "ERROR: could not add SPARTA_VERSION to .env."
             exit 1
         fi
     fi
 
-    # The create branch below chmods .env at birth, but an upgrade
-    # preserves whatever the previous install left. An .env created by
-    # an older setup.sh -- or by hand -- keeps its mode through every
-    # future upgrade, so make the mode self-healing here.
-    # Idempotent: an already-600 file is unaffected.
-    chmod 600 .env
+    # .env's mode is NOT set here (B6 (b), 0.1.14). Until the wizard has
+    # run, the console's entrypoint gives .env to its group with mode 660
+    # so the wizard can write the port range -- but only when the console
+    # STARTS. A rerun at the same version restarts nothing, so a chmod 600
+    # here took the wizard's write away, and the wizard swallowed the
+    # error: the relay then published the default ports, not the ones
+    # chosen. The mode is set after the health check below, and only once
+    # the console says setup is complete.
 else
     echo "Creating default .env..."
     cat > .env << EOF
@@ -275,41 +290,59 @@ if [ "$HEALTHY" -ne 1 ]; then
     exit 1
 fi
 
+# ── What this run can say ─────────────────────────────────
+# Asked, not assumed (B6). SETUP_STATE uses the console entrypoint's own
+# test -- the one that decides .env's mode -- so the banner and the mode
+# below agree with the console. Anything but those two words (the exec
+# failed) is "unknown", and the banner says it could not tell.
+SETUP_STATE=$(docker exec sparta-console sh -c \
+    'grep -qx SETUP_COMPLETE=true /var/sparta/env/.env && echo complete || echo not-complete' \
+    2>/dev/null || true)
+case "$SETUP_STATE" in
+    complete|not-complete) ;;
+    *) SETUP_STATE=unknown ;;
+esac
 
-echo ""
-if [ "$IS_UPGRADE" -eq 1 ]; then
-    echo "╔════════════════════════════════════════════════════╗"
-    echo "║  Sparta Console upgraded and running               ║"
-    echo "╚════════════════════════════════════════════════════╝"
-    echo ""
-    echo "  Now on ${SPARTA_VERSION_DEFAULT}."
-    echo ""
-    echo "  There is NO wizard to complete. Your admin account,"
-    echo "  tunnels, certificates and data are unchanged — this"
-    echo "  replaced the images, set the version line in .env"
-    echo "  and made .env mode 600 (owner only)."
-    echo ""
-    echo "  → https://<your-server-address>:8443"
-    echo ""
-    echo "  Use whatever address you already reach this host on."
-    echo "  The console listens on all interfaces, so any address"
-    echo "  that reaches this host works."
-    echo ""
-    echo "  ⚠  The relay is STILL RUNNING THE OLD VERSION. This"
-    echo "     script does not restart it. Bring it up on the new"
-    echo "     one:"
-    echo ""
-    echo "      docker compose --profile relay up -d relay"
-    echo ""
-    echo "  Then upgrade each agent host: download the installer"
-    echo "  from this console (any agent's panel) and run it there"
-    echo "  with --upgrade. Upgrading the server upgrades no agent."
-    echo ""
-else
-    echo "╔════════════════════════════════════════════════════╗"
-    echo "║  Sparta Console is ready!                          ║"
-    echo "╚════════════════════════════════════════════════════╝"
-    echo ""
+# The relay as Docker reports it. "current" needs BOTH its tag naming
+# this release AND its image being the one that tag names now, so a tag
+# pulled again since the relay started counts as not current. No image
+# name is written here: the container's own tag is used.
+RELAY_STATE=absent
+RELAY_TAG=""
+RELAY_WHY=""
+if RELAY_INFO=$(docker inspect --format '{{.State.Status}} {{.Image}} {{.Config.Image}}' sparta-relay 2>/dev/null); then
+    read -r RELAY_STATUS RELAY_IMAGE_ID RELAY_TAG <<< "$RELAY_INFO"
+    case "$RELAY_STATUS" in
+        running)
+            TAG_ID=$(docker image inspect --format '{{.Id}}' "$RELAY_TAG" 2>/dev/null || true)
+            if [ "${RELAY_TAG##*:}" != "relay-${SPARTA_VERSION_DEFAULT}" ]; then
+                RELAY_STATE=other
+                RELAY_WHY="${RELAY_TAG##*:}"
+            elif [ -z "$TAG_ID" ] || [ "$TAG_ID" != "$RELAY_IMAGE_ID" ]; then
+                RELAY_STATE=other
+                RELAY_WHY="an earlier pull of ${RELAY_TAG##*:}"
+            else
+                RELAY_STATE=current
+            fi
+            ;;
+        restarting) RELAY_STATE=restarting ;;
+        *) RELAY_STATE=stopped ;;
+    esac
+fi
+
+# ── .env's mode, once setup is complete ──────────────────
+# The console's entrypoint makes .env 600 at every start once setup is
+# complete; this covers a run that restarts nothing. Before the wizard
+# (or when the console could not be asked) the mode is left as the
+# console set it -- see the note in the version step above.
+ENV_MODE_WAS=""
+if [ "$SETUP_STATE" = complete ]; then
+    MODE_BEFORE=$(stat -c '%a' .env)
+    chmod 600 .env
+    [ "$MODE_BEFORE" = 600 ] || ENV_MODE_WAS=$MODE_BEFORE
+fi
+
+print_wizard_steps() {
     echo "  Open your browser and complete the setup wizard:"
     echo ""
     echo "  → https://<your-server-address>:8443"
@@ -336,6 +369,164 @@ else
     echo "  serves a temporary self-signed one until the wizard"
     echo "  installs the real one. Safe to proceed."
     echo ""
+}
+
+print_relay_line() {
+    case "$RELAY_STATE" in
+        current)
+            echo "  ✓ The relay is running ${SPARTA_VERSION_DEFAULT}."
+            ;;
+        other)
+            echo "  ⚠  The relay is still running ${RELAY_WHY}."
+            echo "     This script does not restart it. Bring it up on"
+            echo "     ${SPARTA_VERSION_DEFAULT}:"
+            echo ""
+            echo "      docker compose --profile relay up -d relay"
+            ;;
+        restarting)
+            echo "  ⚠  The relay is restarting over and over. See why:"
+            echo ""
+            echo "      docker compose logs relay"
+            ;;
+        *)
+            echo "  The relay is not running. Start it:"
+            echo ""
+            echo "      docker compose --profile relay up -d relay"
+            echo ""
+            echo "  The --profile flag is required. Without it the relay"
+            echo "  is silently skipped and no agent can connect."
+            ;;
+    esac
+    echo ""
+}
+
+print_console_address() {
+    echo "  → https://<your-server-address>:8443"
+    echo ""
+    echo "  Use whatever address you already reach this host on."
+    echo "  The console listens on all interfaces, so any address"
+    echo "  that reaches this host works."
+    echo ""
+}
+
+# The version line, for every run that found an .env. "Running B (was
+# A)", never "upgraded": README's Rolling back runs an older release's
+# setup.sh, which moves the version DOWN.
+print_version_line() {
+    case "$VERSION_STATE" in
+        changed)
+            echo "  Now on ${SPARTA_VERSION_DEFAULT} (was ${VERSION_FROM}): this run changed"
+            echo "  the version line in .env and nothing else in it."
+            ;;
+        added)
+            echo "  Now on ${SPARTA_VERSION_DEFAULT}: this run added the version line"
+            echo "  to .env and changed nothing else in it."
+            ;;
+        *)
+            echo "  On ${SPARTA_VERSION_DEFAULT}. The version in .env was already"
+            echo "  ${SPARTA_VERSION_DEFAULT}."
+            echo ""
+            echo "  If you extracted a new release before this run, this"
+            echo "  is still the old setup.sh: see README.md, Upgrading,"
+            echo "  \"Check the extraction actually happened\"."
+            ;;
+    esac
+    echo ""
+}
+
+echo ""
+if [ "$HAD_ENV" -eq 0 ] && [ "$SETUP_STATE" = complete ]; then
+    # Q2 (ruled 2026-11-21): no .env here, but this host's console was set
+    # up before -- .env deleted, or a new install directory (compose's
+    # fixed project name gives every directory on the host the same
+    # volumes). This run has just generated a NEW encryption key next to
+    # data written with the old one. Stop before the backup advice below:
+    # copying THIS .env over the customer's backup would destroy the one
+    # copy of the key that reads their data.
+    echo "╔════════════════════════════════════════════════════╗"
+    echo "║  STOP — this console was set up before             ║"
+    echo "╚════════════════════════════════════════════════════╝"
+    echo ""
+    echo "  There was no .env in $(pwd),"
+    echo "  so this run made one with a NEW encryption key. But"
+    echo "  this host's Sparta data was set up by an earlier"
+    echo "  install, and only the earlier key can read it."
+    echo ""
+    echo "  (Installing into a new directory does this: the data"
+    echo "  lives in Docker volumes that every Sparta directory on"
+    echo "  this host shares.)"
+    echo ""
+    echo "  Put the earlier .env back in place of this one — from"
+    echo "  your backup, or from the directory you installed in"
+    echo "  before — then run ./setup.sh again."
+    echo ""
+    echo "  Do NOT back up this .env over your existing backup:"
+    echo "  the key in it reads nothing."
+    echo ""
+    echo "  Until then the console cannot read the credentials"
+    echo "  it issued to your agents. Its log says so:"
+    echo ""
+    echo "      docker compose logs console"
+    echo ""
+    exit 1
+fi
+
+if [ "$HAD_ENV" -eq 0 ]; then
+    echo "╔════════════════════════════════════════════════════╗"
+    echo "║  Sparta Console is ready!                          ║"
+    echo "╚════════════════════════════════════════════════════╝"
+    echo ""
+    print_wizard_steps
+elif [ "$SETUP_STATE" = complete ]; then
+    echo "╔════════════════════════════════════════════════════╗"
+    echo "║  Sparta Console is running                         ║"
+    echo "╚════════════════════════════════════════════════════╝"
+    echo ""
+    print_version_line
+    echo "  There is NO wizard to complete. This script does not"
+    echo "  touch your admin account, tunnels, certificates or"
+    echo "  data."
+    echo ""
+    if [ -n "$ENV_MODE_WAS" ]; then
+        echo "  Made .env mode 600 (owner only); it was ${ENV_MODE_WAS}."
+        echo ""
+    fi
+    print_console_address
+    print_relay_line
+    if [ "$VERSION_STATE" = changed ] || [ "$VERSION_STATE" = added ]; then
+        echo "  Agent hosts are not changed by this script: download"
+        echo "  the installer from this console (any agent's panel)"
+        echo "  and run it there with --upgrade."
+        echo ""
+    fi
+elif [ "$SETUP_STATE" = not-complete ]; then
+    echo "╔════════════════════════════════════════════════════╗"
+    echo "║  Sparta Console is running — setup not done        ║"
+    echo "╚════════════════════════════════════════════════════╝"
+    echo ""
+    print_version_line
+    print_wizard_steps
+    if [ "$RELAY_STATE" != absent ] && [ "$RELAY_STATE" != stopped ]; then
+        echo "  The relay is already running: it was started before"
+        echo "  the wizard. The relay command above, run after the"
+        echo "  wizard, recreates it with the ports you choose there."
+        echo ""
+    fi
+else
+    echo "╔════════════════════════════════════════════════════╗"
+    echo "║  Sparta Console is running                         ║"
+    echo "╚════════════════════════════════════════════════════╝"
+    echo ""
+    print_version_line
+    echo "  Could not ask the console whether its setup is"
+    echo "  complete (docker exec sparta-console failed)."
+    echo ""
+    echo "  If you have NOT completed the setup wizard yet:"
+    echo ""
+    print_wizard_steps
+    echo "  If you HAVE completed it, there is no wizard to run."
+    echo ""
+    print_relay_line
 fi
 
 # ── Back up .env ─────────────────────────────────────────
