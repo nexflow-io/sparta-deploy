@@ -301,6 +301,32 @@ fingerprint. Compare that fingerprint with the one published at
   system's library directories.
 - Under SELinux it runs **unconfined** (`unconfined_service_t`); the
   systemd sandbox is what contains it.
+- Its memory is limited. Every agent on a host runs in one systemd
+  slice, and together they may use at most **a quarter of the host's
+  memory**, with no swap (`MemoryMax=25%`, `MemorySwapMax=0`). An agent
+  that would go past that is ended by the kernel and started again by
+  systemd within seconds: its connections end, and nothing else on the
+  host is touched. A client that stops reading a large answer holds about
+  11 MiB in an App Agent, and up to 4 MiB in a Data Agent, until it reads
+  again or its connection ends.
+
+  The installer keeps the limit in a file of its own and writes it again
+  at every install and upgrade. To change it, run
+
+  ```bash
+  sudo systemctl edit 'system-sparta\x2dagent.slice'
+  ```
+
+  and put, for example,
+
+  ```ini
+  [Slice]
+  MemoryMax=40%
+  ```
+
+  in it. Your file is applied after the installer's, takes effect at
+  once, and is never changed by the installer; it stays on the host when
+  the last agent is removed.
 - The installer makes no network call and installs no package. It
   creates the `sparta-agent` user and group, installs and enables the
   agent's systemd unit, and otherwise touches only its own files.
@@ -623,6 +649,10 @@ is put back on the version it was running, and the command says which
 agent and why. So upgrade the server first, and run `--upgrade` while
 the relay can be reached. The tunnel list in the console shows the
 version each agent reports.
+
+From 0.1.14 an upgrade also puts the agents' memory limit in place
+(see [What an agent can do on its host](#what-an-agent-can-do-on-its-host));
+it takes effect at once, with no restart.
 
 The control command left on the host carries no agent, so an upgrade
 always needs the downloaded installer. An older installer than the one
