@@ -196,7 +196,12 @@ an **App Agent**. They are not interchangeable:
 
 The traffic path is: your application → App Agent → relay → Data Agent
 → your database. In Direct mode there is no App Agent: your application
-connects to the relay's port for the data source.
+connects to the relay's port for the data source. The relay leaves the
+receive buffer of those connections to the kernel, because its clients
+are usually far away and a fixed buffer would slow what they send; so on
+a small server, many clients sending large uploads that the database
+takes in slowly can reach the kernel's TCP memory limit (see
+*Memory for connections held unread* under *Agent hosts*).
 
 An agent is one program, run as a systemd service on a Linux host. It is
 installed from one file, the **agent installer**, which your console
@@ -214,6 +219,24 @@ An agent host needs:
 - **`sudo`**, to install the agent as a system service.
 - **Outbound** access to the relay on 443. Nothing inbound, except an App
   Agent's local ports, one for each data source.
+- **To be near what it serves.** A Data Agent belongs on or near its
+  database's machine, and an App Agent on or near its application's. An
+  agent gives each connection to its database, or from its application, a
+  fixed receive buffer: twice 256 KiB, or twice the host's
+  `net.core.rmem_max` if that is less — 416 KiB on RHEL 9 as installed — so
+  an answer a client holds unread waits in the database rather than in the
+  agent's buffers. That buffer allows roughly 3 Gbit/s per connection when
+  the database is 1 ms away, about 330 Mbit/s at 10 ms and about 110 Mbit/s
+  at 30 ms.
+- **Memory for connections held unread.** Linux limits the memory all of a
+  host's TCP connections may use together (`net.ipv4.tcp_mem`, sized at boot
+  from the host's memory). Past that limit the kernel drops data arriving on
+  some connections, and those connections can pause for up to two minutes
+  before they continue. Each connection whose client holds a large answer
+  unread costs a Data Agent's host about 2 MiB (the agent's buffer and, when
+  the database runs on the same host, the database's own). On a 2 GiB host
+  the limit is near 80 MiB: plan for no more than about 35 such connections
+  at once, and give the host more memory for more.
 - These commands, from these packages. Most are on any server install;
   **`openssl` is missing from minimal Ubuntu and Debian images**, and the
   installer will not run without it — it is what checks the agent's
