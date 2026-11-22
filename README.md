@@ -393,9 +393,13 @@ The steps are in the agent's panel, under **Updating a running agent**:
 download the config again, copy it to the host, and run the replace
 command shown. **Replacing a config restarts the agent**, which
 interrupts the connections going through it. The new config is checked
-first. If the agent does not start on it, or was connected to its relay
-before and is not answered by it again within 30 seconds, the previous
-config is put back and the command says why.
+first, and if the agent does not start on it the previous config is put
+back. Then the command waits up to 30 seconds for the relay's answer and
+says what it was: the agent reached its relay, the relay turned it away
+(with the relay's reason), or the agent did not reach the relay. An
+agent that was connected before and is not connected on the new config
+is given its previous config back — at once if the relay turned the new
+one away — and the command says why.
 
 To move an agent to a relay it cannot reach yet — a new address whose
 name or certificate is not live yet — stop the agent first, then replace
@@ -406,8 +410,12 @@ sudo systemctl stop sparta-agent@<name>
 sudo /usr/local/sbin/sparta-agent --config <file> --name <name>
 ```
 
-An agent that was not connected is kept on its new config as long as it
-starts, and connects once the relay can be reached.
+An agent that was not connected keeps its new config whatever the
+relay's answer, and connects once the relay can be reached; the command
+says what the relay answered and what to do, and ends without an error.
+"Unknown tunnel_id" or "Auth failed" from a config made since the last
+**Apply Config** means the relay has not been told of it yet: apply, then
+restart the agent.
 
 A **Data Agent** has a second way, for a change to its data sources
 only: put the file in place and reload, as the panel shows. That
@@ -428,6 +436,12 @@ relay's state and the last reload's outcome — and
 `sudo journalctl -u sparta-agent@<name>` gives its log. Reading the log
 needs root, or membership of a group that may read the journal (on
 RHEL 9: `adm`, `systemd-journal` or `wheel`).
+
+The agent files its warnings and errors in the journal at their own
+priority. `sudo journalctl -u 'sparta-agent@*' -p err` shows only the
+errors of every agent on the host — the level to alert on — and
+`-p warning` adds the warnings, such as each failed attempt to reach the
+relay.
 
 ### Taking an agent out
 
@@ -831,7 +845,9 @@ Check that a licence is active, that port 443 is reachable from the
 agent's network, and that the relay is actually running
 (`docker compose ps` — remember the `--profile relay` flag). Then read
 the agent's own log on its host (`sudo journalctl -u
-sparta-agent@<name>`).
+sparta-agent@<name>`). An agent never stops trying to reach its relay:
+until it does, it logs `Relay not reached since <time> (…); still trying`
+as an error about every two minutes (`reconnect_max_time` in its config).
 
 **An agent still will not connect after I corrected its credential.**
 The relay reports a rejected credential as a permanent failure, and the
