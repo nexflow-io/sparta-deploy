@@ -178,6 +178,16 @@ ssh -L 8443:localhost:8443 user@your-server -N
 
 then browse to `https://localhost:8443`.
 
+**The console sets its own security headers.** Every response carries a
+Content-Security-Policy that lets its pages load and connect only to the
+console itself, `X-Frame-Options: DENY`, `Referrer-Policy: no-referrer`
+and `X-Content-Type-Options: nosniff`. Its pages load nothing from any
+other site — fonts included. If you put a proxy of your own in front of
+the console, do not add these headers there as well: a browser handles
+two of them badly. The console sends no `Strict-Transport-Security`;
+that commits your whole host name to HTTPS, and is yours to add if you
+want it.
+
 ---
 
 ## Agents
