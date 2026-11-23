@@ -909,6 +909,15 @@ on the line above it, is what to read.
 The services find each other by container name. Do not change
 `container_name` in `docker-compose.yml`.
 
+**`docker ps` shows `sparta-nginx` as `(unhealthy)`.**
+nginx is running but not listening where it should: on 8443 (the
+console) always, and on 443 (the agents) once setup is complete.
+`docker inspect --format '{{json .State.Health.Log}}' sparta-nginx`
+names the port that is missing, and `docker logs sparta-nginx` usually
+says why (most often a certificate or site config nginx refused). Docker
+does not restart an unhealthy container; fix the cause, then
+`docker compose restart nginx`.
+
 **Image pull fails.**
 Confirm `docker login` succeeded with the credentials from your
 registration email, and that `SPARTA_VERSION` in `.env` names a real
