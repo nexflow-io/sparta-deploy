@@ -44,6 +44,12 @@ services:
     image: spartahq/sparta:nginx-${SPARTA_VERSION:-REPLACE_ME}
     container_name: sparta-nginx
     restart: unless-stopped
+    # No process in it may gain privileges through exec (no-new-privileges,
+    # 0.1.14, ruled 2026-11-26): its entrypoint drops root with setpriv, or
+    # nginx its workers with setuid, and nothing in the images runs a
+    # setuid program. The same on all three services.
+    security_opt:
+      - no-new-privileges:true
     # nginx.conf sets worker_connections 4096, but the default
     # container nofile limit is 1024 — which silently capped the real
     # ceiling at roughly a quarter of the configured one. A proxied
@@ -78,6 +84,8 @@ services:
     image: spartahq/sparta:relay-${SPARTA_VERSION:-REPLACE_ME}
     container_name: sparta-relay
     restart: unless-stopped
+    security_opt:
+      - no-new-privileges:true
     # A stop waits for each agent's close to complete (finding 15 of the
     # 0.1.13 stress test): about a round trip, but up to 10 s for an agent
     # whose path has just died, then up to 6 s for work in flight. Docker's
@@ -127,6 +135,8 @@ services:
     image: spartahq/sparta:console-${SPARTA_VERSION:-REPLACE_ME}
     container_name: sparta-console
     restart: unless-stopped
+    security_opt:
+      - no-new-privileges:true
     volumes:
       - sparta_config:/etc/sparta
       - sparta_certs:/etc/sparta/certs
