@@ -128,6 +128,23 @@ in the wizard, and a published port range cannot be changed on a
 running container. Starting it before the wizard would publish the
 wrong range.
 
+Later, from the install directory (`/opt/sparta`), the relay is run
+with the same commands the console's Settings page shows:
+
+```bash
+docker compose --profile relay up -d relay   # start it
+docker compose stop relay                    # stop it
+docker compose restart relay                 # restart it
+docker compose logs relay -f                 # follow its log
+```
+
+A changed tunnel port range needs every container made again, because a
+published range cannot change on a running one:
+
+```bash
+docker compose --profile relay down && docker compose --profile relay up -d
+```
+
 ### Optional: set a support address
 
 The console's manual can show an address of your own as the one to
