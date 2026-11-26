@@ -553,6 +553,14 @@ If your `ssl_certificate` line names a different directory, find its
 volume with `docker volume ls | grep sparta` and inspect that one
 instead.
 
+Sparta reads certificates from this volume and nowhere else. It does not
+read `/etc/letsencrypt`: if certbot manages your certificate, copy its
+`fullchain.pem` and `privkey.pem` here as below, or upload them in the
+console. (Until 0.1.14 the compose file mounted `/etc/letsencrypt` into
+three containers, read by nothing; on a host without that directory,
+Docker had created an empty one. 0.1.14 mounts it nowhere, and leaves the
+directory on your host alone.)
+
 ### Replace the two files
 
 Copy your new certificate and key over the existing files, keeping the

@@ -61,7 +61,6 @@ services:
     volumes:
       - sparta_nginx:/etc/sparta/nginx   # generated site config
       - sparta_certs:/etc/sparta/certs   # TLS certificates
-      - /etc/letsencrypt:/etc/letsencrypt:ro
     networks:
       - sparta-net
     depends_on:
@@ -104,7 +103,6 @@ services:
     volumes:
       - sparta_config:/etc/sparta
       - sparta_certs:/etc/sparta/certs:ro
-      - /etc/letsencrypt:/etc/letsencrypt:ro
     environment:
       - LOG_LEVEL=${LOG_LEVEL:-INFO}
       - CONSOLE_URL=http://sparta-console:8081
@@ -135,7 +133,6 @@ services:
       - sparta_data:/var/sparta/data
       - sparta_env:/var/sparta/env
       - sparta_nginx:/etc/sparta/nginx
-      - /etc/letsencrypt:/etc/letsencrypt:ro
       # The wizard writes your host .env. Single-file mount by design —
       # the console never gets a directory it could write beyond this.
       - ./.env:/app/host/.env:rw
