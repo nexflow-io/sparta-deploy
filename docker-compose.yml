@@ -50,6 +50,15 @@ services:
     # setuid program. The same on all three services.
     security_opt:
       - no-new-privileges:true
+    # The kernel holds at most 128 KiB unsent on each of nginx's sockets
+    # ((v) of finding (4) of 0.1.14, ruled 2026-11-26 19:08 CST): nginx
+    # has no setting of its own for it, and this one is the container's
+    # network namespace only, not the host's. As shipped nginx's socket to
+    # the relay held about 3.6 MB unsent, one queue for every stream of a
+    # session, and a small answer waited behind it (the relay and the
+    # agents set the same bound on their own sockets).
+    sysctls:
+      net.ipv4.tcp_notsent_lowat: "131072"
     # nginx.conf sets worker_connections 4096, but the default
     # container nofile limit is 1024 — which silently capped the real
     # ceiling at roughly a quarter of the configured one. A proxied
